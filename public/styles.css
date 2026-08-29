@@ -1,0 +1,48 @@
+:root{
+  --bg:#f0f7ff; --surface:#fff; --surface-2:#f2f8ff; --ink:#0b2536; --soft:#42566a;
+  --faint:#7488a0; --border:#d6e6f5; --accent:#38BDF8; --hover:#0EA5E9; --tint:#BAE6FD;
+  --inkblue:#0369A1; --good:#1f9d6b; --crit:#c0453a;
+  --shadow:0 1px 2px rgba(11,37,54,.05),0 12px 30px rgba(11,37,54,.08);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:"DM Sans",system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+a{color:var(--inkblue)}
+.wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.card{width:100%;max-width:440px;background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
+.head{display:flex;align-items:center;gap:11px;padding:20px 24px;border-bottom:1px solid var(--border)}
+.logo{width:34px;height:34px;border-radius:9px;background:var(--tint);border:1px solid var(--accent);display:grid;place-items:center;color:var(--inkblue);font-weight:900}
+.head b{font-size:1.15rem}.head span{display:block;font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
+.body{padding:24px}
+h2{margin:0 0 4px;font-size:1.35rem}.sub{color:var(--soft);font-size:.9rem;margin:0 0 18px}
+label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:14px 0 6px}
+input{width:100%;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;color:var(--ink);font:400 .95rem inherit}
+input:focus{outline:2px solid var(--accent);border-color:var(--accent)}
+.btn{width:100%;margin-top:18px;padding:13px;border:0;border-radius:12px;background:var(--accent);color:#062a3d;font:700 1rem inherit;cursor:pointer}
+.btn:hover{background:var(--hover)}.btn:disabled{opacity:.6;cursor:default}
+.btn.ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--border)}
+.google{width:100%;margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--ink);font:600 .95rem inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;text-decoration:none}
+.google:hover{background:var(--surface-2)}
+.or{display:flex;align-items:center;gap:12px;margin:16px 0;color:var(--faint);font-size:12px}
+.or:before,.or:after{content:"";flex:1;height:1px;background:var(--border)}
+.foot{text-align:center;margin-top:16px;color:var(--soft);font-size:.88rem}
+.link{color:var(--inkblue);background:none;border:0;cursor:pointer;font:600 .88rem inherit}
+.msg{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:.85rem;display:none}
+.msg.err{display:block;background:rgba(192,69,58,.1);border:1px solid rgba(192,69,58,.4);color:var(--crit)}
+.msg.ok{display:block;background:rgba(31,157,107,.1);border:1px solid rgba(31,157,107,.4);color:var(--good)}
+/* dashboard */
+.shell{max-width:960px;margin:0 auto;padding:20px}
+.topbar{display:flex;align-items:center;gap:12px;padding:14px 4px;margin-bottom:8px}
+.topbar .logo{width:30px;height:30px}
+.topbar b{font-size:1.05rem}.spacer{flex:1}
+.pill{font-size:12px;padding:5px 12px;border-radius:999px;background:var(--tint);color:var(--inkblue);border:1px solid var(--accent)}
+.hi{font-size:1.6rem;font-weight:900;margin:14px 4px 2px}
+.grid{display:grid;gap:16px;grid-template-columns:1fr}
+@media(min-width:720px){.grid.two{grid-template-columns:1fr 1fr}}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:20px}
+.panel h3{margin:0 0 12px;font-size:1.05rem}
+.kv{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);font-size:.92rem}
+.kv:last-child{border-bottom:0}.kv b{font-weight:600}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 4px 16px}
+.tab{padding:8px 14px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--soft);cursor:pointer;font:600 .85rem inherit}
+.tab.on{background:var(--tint);color:var(--inkblue);border-color:var(--accent)}
+.muted{color:var(--faint);font-size:.85rem}
