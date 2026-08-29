@@ -35,8 +35,8 @@
       "<div class='kv'><span>Email</span><b>" + esc(me.email) + "</b></div>" +
       "<label>Username</label><input id='uname' value=\"" + esc(me.username || "") + "\">" +
       "<div class='msg' id='pmsg'></div>" +
-      "<button class='btn' id='psave' style='max-width:180px'>Save changes</button>" +
-      "<p class='muted' style='margin-top:10px'>Email is read-only and cannot be changed.</p>"
+      "<button class='btn btn-sm' id='psave'>Save changes</button>" +
+      "<p class='muted mt10'>Email is read-only and cannot be changed.</p>"
     );
     $("psave").onclick = function () {
       var v = $("uname").value.trim(); if (!v) { pmsg("Enter a username."); return; }
@@ -59,7 +59,7 @@
       "<label>New password</label><input id='n1' type='password'>" +
       "<label>Confirm new password</label><input id='n2' type='password'>" +
       "<div class='msg' id='smsg'></div>" +
-      "<button class='btn' id='ssave' style='max-width:200px'>Update password</button>"
+      "<button class='btn btn-md' id='ssave'>Update password</button>"
     );
     $("ssave").onclick = function () {
       var cur = $("cur").value, n1 = $("n1").value, n2 = $("n2").value;
@@ -77,16 +77,16 @@
     if (me.subscriptionStatus === "active") {
       panel("<h3>Subscription</h3><div class='kv'><span>Plan</span><b>" + esc(me.plan) + "</b></div><div class='kv'><span>Status</span><b>Active</b></div>");
     } else {
-      panel("<h3>Subscription</h3><p>You don't have an active subscription.</p><a class='btn' style='max-width:160px;display:inline-block;text-align:center;text-decoration:none' href='/pricing'>View plans →</a>");
+      panel("<h3>Subscription</h3><p>You don't have an active subscription.</p><a class='btn btn-link' href='/pricing'>View plans →</a>");
     }
   }
 
   function renderReferral() {
     if (me.referralCode) {
       var link = location.origin + "/signup?ref=" + me.referralCode;
-      panel("<h3>Refer &amp; Earn</h3><p>Share your link and earn credits.</p><div class='kv'><span>Your link</span><b style='word-break:break-all'>" + esc(link) + "</b></div>");
+      panel("<h3>Refer &amp; Earn</h3><p>Share your link and earn credits.</p><div class='kv'><span>Your link</span><b class='break-all'>" + esc(link) + "</b></div>");
     } else {
-      panel("<h3>Refer &amp; Earn</h3><p>Request access to get your referral link and earn credits per signup.</p><button class='btn' id='refreq' style='max-width:220px'>Request Referral Access</button><div class='msg' id='rmsg'></div>");
+      panel("<h3>Refer &amp; Earn</h3><p>Request access to get your referral link and earn credits per signup.</p><button class='btn btn-lg' id='refreq'>Request Referral Access</button><div class='msg' id='rmsg'></div>");
       var b = $("refreq"); if (b) b.onclick = function () { $("rmsg").textContent = "Referral endpoint is Part 2 — pending backend wiring."; $("rmsg").className = "msg err"; };
     }
   }

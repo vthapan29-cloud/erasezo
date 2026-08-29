@@ -36,6 +36,14 @@ input:focus{outline:2px solid var(--accent);border-color:var(--accent)}
 .topbar b{font-size:1.05rem}.spacer{flex:1}
 .pill{font-size:12px;padding:5px 12px;border-radius:999px;background:var(--tint);color:var(--inkblue);border:1px solid var(--accent)}
 .hi{font-size:1.6rem;font-weight:900;margin:14px 4px 2px}
+.creditline{margin:0 4px 6px}
+.signout-btn{width:auto;margin:0;padding:8px 14px}
+.mt10{margin-top:10px}
+.btn-sm{max-width:180px}
+.btn-md{max-width:200px}
+.btn-lg{max-width:220px}
+.btn-link{max-width:160px;display:inline-block;text-align:center;text-decoration:none}
+.break-all{word-break:break-all}
 .grid{display:grid;gap:16px;grid-template-columns:1fr}
 @media(min-width:720px){.grid.two{grid-template-columns:1fr 1fr}}
 .panel{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:20px}
