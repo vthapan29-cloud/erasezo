@@ -1,4 +1,4 @@
-/* Linkllo dashboard + API — Express + Postgres.
+/* Erasezo dashboard + API — Express + Postgres.
  * Auth is built here (Railway Postgres has no auth of its own): bcrypt password
  * hashing + JWT session cookies + Google OAuth (server-side code flow with
  * account-merge by email). */
@@ -14,7 +14,7 @@ const db = require("./db");
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || "dev-insecure-secret-change-me";
 const APP_URL = process.env.APP_URL || ("http://localhost:" + PORT);
-const COOKIE = "linkllo_token";
+const COOKIE = "erasezo_token";
 const DAILY_FREE = Number(process.env.DAILY_FREE || 15);
 const PROD = process.env.NODE_ENV === "production";
 
@@ -223,7 +223,7 @@ async function start() {
   await db.init();
   if (require.main === module) {
     scheduleDailyReset();
-    app.listen(PORT, () => console.log("Linkllo web on " + APP_URL));
+    app.listen(PORT, () => console.log("Erasezo web on " + APP_URL));
   }
 }
 if (require.main === module) start().catch((e) => { console.error("boot failed:", e); process.exit(1); });

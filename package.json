@@ -1,8 +1,8 @@
 {
-  "name": "linkllo-web",
+  "name": "erasezo-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Linkllo dashboard + API — Node/Express + PostgreSQL (Railway).",
+  "description": "Erasezo dashboard + API — Node/Express + PostgreSQL (Railway).",
   "type": "commonjs",
   "engines": { "node": ">=18" },
   "scripts": {

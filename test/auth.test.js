@@ -56,7 +56,7 @@ async function req(path, opts) {
   // 5) password change on a Google-only account → 403 (server-side, not just UI)
   await db.query("insert into users(email, auth_provider, google_id) values ($1,'google',$2)", ["g@x.com", "gid-1"]);
   const gid = (await db.query("select id from users where email=$1", ["g@x.com"])).rows[0].id;
-  const gcookie = "linkllo_token=" + jwt.sign({ uid: gid }, "test-secret");
+  const gcookie = "erasezo_token=" + jwt.sign({ uid: gid }, "test-secret");
   r = await fetch(base + "/api/user/password", { method: "PATCH", headers: { "Content-Type": "application/json", Cookie: gcookie }, body: JSON.stringify({ currentPassword: "x", newPassword: "newpassword123" }) });
   assert.strictEqual(r.status, 403, "google-only password change 403");
   console.log("ok - password change 403 (server-side) for Google-only account");
