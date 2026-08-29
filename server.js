@@ -12,15 +12,64 @@ const path = require("path");
 const db = require("./db");
 
 const PORT = process.env.PORT || 3000;
+const PROD = process.env.NODE_ENV === "production";
+// Fail fast rather than silently signing sessions with a guessable secret.
+if (PROD && !process.env.JWT_SECRET) {
+  console.error("FATAL: JWT_SECRET is not set. Refusing to start in production with an insecure default.");
+  process.exit(1);
+}
 const JWT_SECRET = process.env.JWT_SECRET || "dev-insecure-secret-change-me";
 const APP_URL = process.env.APP_URL || ("http://localhost:" + PORT);
 const COOKIE = "erasezo_token";
 const DAILY_FREE = Number(process.env.DAILY_FREE || 15);
-const PROD = process.env.NODE_ENV === "production";
 
 const app = express();
-app.use(express.json());
+// Railway terminates TLS at its edge and forwards over its internal network,
+// so without this, req.ip is the edge's address for every request — the rate
+// limiter below would bucket all users together instead of by real client IP.
+app.set("trust proxy", 1);
+app.use(express.json({ limit: "64kb" })); // auth payloads are tiny; caps request-body DoS
 app.use(cookieParser());
+
+/* ---------- security headers ---------- */
+// Hand-rolled instead of the `helmet` package — a handful of headers, easy to
+// audit inline, no extra dependency for a small app.
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; " +
+    "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; " +
+    "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+  );
+  if (PROD) res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
+  next();
+});
+
+/* ---------- rate limiting (in-memory, per IP) ---------- */
+// No new dependency for a single-instance app: a small sliding-window counter
+// keyed by IP + route group. Applied only to auth endpoints (the ones worth
+// brute-forcing or hammering) — never to /api/me or static assets.
+const RATE_BUCKETS = new Map();
+function rateLimit(name, max, windowMs) {
+  return (req, res, next) => {
+    const key = name + ":" + req.ip;
+    const now = Date.now();
+    let b = RATE_BUCKETS.get(key);
+    if (!b || now > b.resetAt) { b = { count: 0, resetAt: now + windowMs }; RATE_BUCKETS.set(key, b); }
+    b.count++;
+    if (b.count > max) {
+      res.setHeader("Retry-After", Math.ceil((b.resetAt - now) / 1000));
+      return res.status(429).json({ error: "rate_limited", message: "Too many attempts — try again shortly." });
+    }
+    next();
+  };
+}
+// Periodic sweep so the map doesn't grow unbounded over a long-running process.
+setInterval(() => { const now = Date.now(); for (const [k, b] of RATE_BUCKETS) if (now > b.resetAt) RATE_BUCKETS.delete(k); }, 10 * 60e3).unref();
+const authLimiter = rateLimit("auth", 20, 5 * 60e3); // 20 attempts / 5 min / IP
 
 /* ---------- helpers ---------- */
 function sign(uid) { return jwt.sign({ uid }, JWT_SECRET, { expiresIn: "7d" }); }
@@ -66,7 +115,7 @@ async function grantDailyIfNeeded(uid) {
 }
 
 /* ---------- auth: email + password ---------- */
-app.post("/api/auth/register", async (req, res) => {
+app.post("/api/auth/register", authLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
@@ -86,7 +135,7 @@ app.post("/api/auth/register", async (req, res) => {
   } catch (e) { res.status(500).json({ error: "server_error", message: e.message }); }
 });
 
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", authLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
@@ -125,7 +174,7 @@ app.patch("/api/user/profile", auth, async (req, res) => {
 });
 
 /* ---------- security: change password ---------- */
-app.patch("/api/user/password", auth, async (req, res) => {
+app.patch("/api/user/password", auth, authLimiter, async (req, res) => {
   const u = (await db.query("select auth_provider, password_hash from users where id=$1", [req.userId])).rows[0];
   if (!u) return res.status(401).json({ error: "not_authenticated" });
   // Server-side block for OAuth-only accounts — not just a hidden UI.
