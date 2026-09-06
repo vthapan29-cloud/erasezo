@@ -192,6 +192,79 @@ app.patch("/api/user/password", auth, authLimiter, async (req, res) => {
   res.json({ ok: true });
 });
 
+/* ---------- extension bridge: mint a bearer session for the logged-in cookie user ----------
+ * Called ONLY by page/webBridge.js — a content script running ON erasezo.com,
+ * so this is a same-origin fetch(credentials:'include'); the httpOnly cookie is
+ * what authenticates it (via the `auth` middleware), never a value the
+ * extension has to read directly. The returned token is then relayed into the
+ * extension's OWN storage via its existing `erasioAuthSync` message action —
+ * nothing here talks to any third-party (erasio.io) server. */
+app.get("/api/ext/session", auth, authLimiter, async (req, res) => {
+  const me = await userPublic(req.userId);
+  if (!me) return res.status(401).json({ error: "not_authenticated" });
+  res.json(extSessionPayload(req.userId, me));
+});
+
+function extSessionPayload(uid, me) {
+  const token = sign(uid); // reused as both access + refresh — see webBridge.js note
+  return {
+    data: {
+      accessToken: token, refreshToken: token,
+      user: { username: me.username, name: me.username, email: me.email, is_email_verified: true, emailVerified: true },
+    },
+    // Also top-level, for the /api/ext/session caller (webBridge.js), which
+    // reads these directly rather than via .data.
+    accessToken: token, refreshToken: token,
+    user: { username: me.username, name: me.username, email: me.email, is_email_verified: true, emailVerified: true },
+  };
+}
+
+/* ---------- extension sidepanel bridge: the ORIGINAL bundled UI's own login
+ * form and refresh logic (a separate surface from the website + user.html).
+ * It used to POST straight to erasio.io — a real credential-leak to an
+ * unrelated third party's server from a form branded "Sign in to Erasezo".
+ * These mirror that exact request/response shape but run on OUR OWN backend.
+ *
+ * CORS: these are called by the extension's BACKGROUND SERVICE WORKER, whose
+ * origin is chrome-extension://<id> — genuinely cross-origin from
+ * erasezo.com, unlike /api/me or /api/ext/session (same-origin content-script
+ * calls). Restricted to that exact extension origin, not a wildcard. */
+const EXTENSION_ORIGIN = "chrome-extension://obmfaiblgoplljdpiembdcdjeohllfcd";
+function extCors(req, res, next) {
+  if (req.headers.origin === EXTENSION_ORIGIN) {
+    res.setHeader("Access-Control-Allow-Origin", EXTENSION_ORIGIN);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  }
+  if (req.method === "OPTIONS") return res.status(204).end();
+  next();
+}
+
+app.post("/api/ext/login", extCors, authLimiter, async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    const u = (await db.query("select id, password_hash, auth_provider from users where email=$1", [email])).rows[0];
+    if (!u || !u.password_hash) return res.status(401).json({ message: "invalid_credentials" });
+    if (!(await bcrypt.compare(password, u.password_hash))) return res.status(401).json({ message: "invalid_credentials" });
+    await grantDailyIfNeeded(u.id);
+    setAuthCookie(res, u.id); // also signs the browser in on erasezo.com, if a tab visits it later
+    res.json(extSessionPayload(u.id, await userPublic(u.id)));
+  } catch (e) { res.status(500).json({ message: "server_error" }); }
+});
+
+app.post("/api/ext/logout", extCors, (req, res) => { res.json({ ok: true }); }); // stateless JWT — nothing to revoke server-side
+
+app.post("/api/ext/refresh", extCors, authLimiter, async (req, res) => {
+  try {
+    const decoded = jwt.verify(String(req.body.refreshToken || ""), JWT_SECRET);
+    const me = await userPublic(decoded.uid);
+    if (!me) return res.status(401).json({ message: "invalid_token" });
+    res.json(extSessionPayload(decoded.uid, me));
+  } catch (e) { res.status(401).json({ message: "invalid_token" }); }
+});
+
 // MERGE-BY-EMAIL: if a user with this verified email already exists (e.g. a
 // password account), link googleId to that row — never create a duplicate.
 async function mergeOrCreateGoogleUser(info) {
