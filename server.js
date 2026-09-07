@@ -23,6 +23,17 @@ const APP_URL = process.env.APP_URL || ("http://localhost:" + PORT);
 const COOKIE = "erasezo_token";
 const DAILY_FREE = Number(process.env.DAILY_FREE || 15);
 
+// Origin of the Control Room's Supabase project, read from the panel's own
+// config so the CSP can never drift out of sync with what the page actually
+// calls. Falls back to a wildcard-free no-op if the file is missing.
+const SUPABASE_ORIGIN = (() => {
+  try {
+    const cfg = require("fs").readFileSync(path.join(__dirname, "public", "admin", "config.js"), "utf8");
+    const m = cfg.match(/SUPABASE_URL:\s*"(https:\/\/[a-z0-9-]+\.supabase\.co)"/i);
+    return m ? m[1] : "";
+  } catch (e) { return ""; }
+})();
+
 const app = express();
 // Railway terminates TLS at its edge and forwards over its internal network,
 // so without this, req.ip is the edge's address for every request — the rate
@@ -41,7 +52,10 @@ app.use((req, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
     "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; " +
-    "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; " +
+    "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; " +
+    // The Control Room at /admin authenticates against its own Supabase project
+    // (separate from this app's Postgres login), so it needs that one host.
+    `connect-src 'self' ${SUPABASE_ORIGIN}; ` +
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   );
   if (PROD) res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
@@ -320,10 +334,20 @@ app.get("/api/auth/google/callback", async (req, res) => {
 });
 
 /* ---------- static pages ---------- */
-app.use(express.static(path.join(__dirname, "public")));
+// redirect:false — public/admin is a real directory, and static's default
+// "add a trailing slash" redirect for directories fights the /admin route
+// below into a redirect loop. Assets under /admin/ still serve normally.
+app.use(express.static(path.join(__dirname, "public"), { redirect: false }));
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.get(["/login", "/signin"], (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
+// Control Room. No server-side gate on purpose: the page ships no data of its
+// own — every byte it shows comes from Supabase, where the admins-table RLS
+// policy plus mandatory TOTP decide what a caller may read, so serving the
+// shell to an anonymous visitor reveals nothing. Its asset refs are
+// root-absolute, which resolves identically here and at the extension root —
+// same file, no build step, no trailing-slash edge case.
+app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 
 /* ---------- daily free-quota reset (real scheduled job, in-process) ---------- */

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Erasezo Control Room</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@500;700;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <div class="app">
+    <aside>
+      <div class="brand">
+        <div class="logo"><svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><line x1="21" y1="5" x2="14" y2="5"/><line x1="10" y1="5" x2="3" y2="5"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="19" x2="16" y2="19"/><line x1="12" y1="19" x2="3" y2="19"/><line x1="14" y1="3" x2="14" y2="7"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="17" x2="16" y2="21"/></svg></div>
+        <div><b>Control Room</b><span>ERASEZO ADMIN</span></div>
+      </div>
+      <nav id="nav"></nav>
+    </aside>
+    <main>
+      <div class="topbar">
+        <h1 id="tab-title">Dashboard</h1>
+        <div class="save-ind" id="saveInd"><span class="d"></span><span id="saveTxt">All changes saved</span></div>
+        <button class="tbtn" id="acctBtn">Sign in</button>
+        <button class="tbtn" id="themeBtn">◐ theme</button>
+      </div>
+      <div class="panel" id="panel"></div>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="/admin/config.js"></script>
+  <script src="/admin/supabase.js"></script>
+  <script src="/admin/auth.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>

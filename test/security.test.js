@@ -51,6 +51,38 @@ async function req(path, opts) { return fetch(base + path, opts); }
   assert.ok(allOk, "non-auth routes are unaffected by the auth rate limiter");
   console.log("ok - non-auth routes unaffected by the auth-only rate limiter");
 
+  // 5) The Control Room is served, and its relative asset refs resolve to real
+  //    files. That layout is load-bearing (see sync-admin.sh) — a bad copy
+  //    would 404 the panel's scripts and render a silently blank shell.
+  const rAdmin = await req("/admin");
+  assert.strictEqual(rAdmin.status, 200, "/admin serves the Control Room");
+  const html = await rAdmin.text();
+  assert.ok(/admin\.css/.test(html) && !/<style>/.test(html), "styles are an external file (strict CSP has no 'unsafe-inline')");
+  for (const asset of ["/admin.css", "/admin.js", "/admin/config.js", "/admin/supabase.js", "/admin/auth.js"]) {
+    assert.strictEqual((await req(asset)).status, 200, `${asset} resolves`);
+  }
+  console.log("ok - /admin serves the Control Room and every relative asset resolves");
+
+  // 6) CSP must allow the panel's Supabase host, or every sign-in dies as an
+  //    opaque "Failed to fetch" — while still granting no blanket escape hatch.
+  const csp = rAdmin.headers.get("content-security-policy");
+  assert.ok(/connect-src 'self' https:\/\/[a-z0-9-]+\.supabase\.co/.test(csp), "CSP allows the Supabase origin");
+  assert.ok(!/unsafe-inline|unsafe-eval/.test(csp), "CSP grants no unsafe-inline/eval");
+  console.log("ok - CSP allows Supabase yet keeps script/style locked down");
+
+  // 7) The extension's session-token keys must never be reachable through the
+  //    settings bridge, in either direction — that allowlist is the whole
+  //    trust boundary between page script and the extension's auth.
+  const bridgeSrc = require("fs").readFileSync(require("path").join(__dirname, "..", "..", "Erasezo-extension", "page", "webBridge.js"), "utf8");
+  const keyList = bridgeSrc.match(/var SETTINGS_KEYS = \[([\s\S]*?)\]/);
+  assert.ok(keyList, "SETTINGS_KEYS allowlist present in webBridge.js");
+  for (const secret of ["erasioAccessToken", "erasioRefreshToken", "erasioUser"]) {
+    assert.ok(!keyList[1].includes(secret), `${secret} is NOT bridgeable to page script`);
+  }
+  const actions = bridgeSrc.match(/var ALLOWED_ACTIONS = \[([\s\S]*?)\]/);
+  assert.ok(actions && !actions[1].includes("erasioAuthSync"), "erasioAuthSync is not page-invokable (would accept a forged token)");
+  console.log("ok - settings bridge cannot read or forge extension auth tokens");
+
   server.close();
   console.log("\nALL SECURITY TESTS PASSED");
   process.exit(0);
