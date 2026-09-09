@@ -201,3 +201,42 @@ td input.wide{width:100%}
   .userrow-head{flex-direction:column;align-items:flex-start;gap:8px}
   .userrow-tags{justify-content:flex-start}
 }
+
+/* ---- user drawer ----
+   A slide-over rather than an inline accordion: the account being edited stays
+   pinned in the header, so it can't scroll out of sight mid-change. */
+.drawer-ov{position:fixed;inset:0;z-index:60;background:color-mix(in srgb,var(--ink) 42%,transparent);backdrop-filter:blur(3px);display:flex;justify-content:flex-end}
+.drawer{width:min(620px,100%);height:100%;background:var(--ground);border-left:1px solid var(--border);box-shadow:-18px 0 48px rgba(0,0,0,.18);display:flex;flex-direction:column;animation:drawer-in .18s ease-out}
+@keyframes drawer-in{from{transform:translateX(24px);opacity:.4}to{transform:none;opacity:1}}
+@media (prefers-reduced-motion:reduce){.drawer{animation:none}}
+.drawer-head{position:sticky;top:0;z-index:2;background:var(--surface);border-bottom:1px solid var(--border);padding:18px 22px 0}
+.drawer-id{display:flex;align-items:center;gap:12px}
+.avatar-sm{width:40px;height:40px;border-radius:50%;background:var(--accent-wash);border:1px solid var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-weight:900;flex:none}
+.drawer-idt{min-width:0;flex:1}
+.drawer-idt b{display:block;font-size:1rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drawer-idt span{display:block;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--ink-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.drawer-tags{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
+.drawer-tabs{display:flex;gap:2px;margin-top:14px}
+.drawer-tabs button{background:none;border:0;border-bottom:2px solid transparent;padding:9px 13px;color:var(--ink-soft);font:600 .86rem "IBM Plex Sans",sans-serif;cursor:pointer}
+.drawer-tabs button:hover{color:var(--ink)}
+.drawer-tabs button.on{color:var(--accent-ink);border-bottom-color:var(--accent)}
+.drawer-body{flex:1;overflow-y:auto;padding:18px 22px 40px;display:flex;flex-direction:column;gap:14px}
+.drawer-body .card{margin-bottom:0}
+.drawer-body .tiles{margin:0}
+.utag-warn{color:var(--warn);border-color:var(--warn)}
+.callout-warn{border-left:3px solid var(--warn);background:var(--warn-wash)}
+.danger-card{border-color:color-mix(in srgb,var(--crit) 45%,var(--border))}
+.btn.danger{background:var(--crit);color:#fff;border-color:var(--crit)}
+.btn.danger:hover{filter:brightness(.94)}
+@media(max-width:680px){
+  .drawer{width:100%}
+  .drawer-head{padding:14px 16px 0}
+  .drawer-body{padding:14px 16px 32px}
+}
+
+/* Usage chart in the user drawer. Inline SVG — one series of bars, and the
+   site's CSP blocks third-party scripts anyway. */
+.chart-wrap{margin-top:10px}
+.chart{width:100%;height:auto;display:block;overflow:visible}
+.chart .bar{fill:var(--accent)}
+.chart .bar.zero{fill:var(--border)}

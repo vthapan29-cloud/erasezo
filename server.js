@@ -249,6 +249,16 @@ async function creditStatus(uid) {
  * callback all funnel through here. */
 const DISABLED_BODY = { error: "account_disabled", message: "This account has been disabled." };
 
+/* Suspension expires on its own. Storing an end time rather than a boolean
+ * means a temporary hold actually lifts itself — a flag someone has to remember
+ * to clear is how accounts stay locked long after the reason has passed. A NULL
+ * end time is an open-ended suspension. */
+function suspensionOf(u) {
+  if (!u || !u.suspend_reason) return null;
+  if (u.suspended_until && new Date(u.suspended_until) <= new Date()) return null;
+  return { reason: u.suspend_reason, until: u.suspended_until || null };
+}
+
 /* ---------- auth: email + password ---------- */
 app.post("/api/auth/register", authLimiter, async (req, res) => {
   try {
@@ -308,11 +318,21 @@ app.get("/api/credits", auth, async (req, res) => {
  * bundle code for no gain. */
 app.get("/api/credits/status", extCors, auth, async (req, res) => {
   await grantDailyIfNeeded(req.userId);
-  res.json({ success: true, data: await creditStatus(req.userId) });
+  const su = suspensionOf((await db.query("select suspend_reason, suspended_until from users where id=$1", [req.userId])).rows[0]);
+  res.json({ success: true, data: Object.assign(await creditStatus(req.userId), su ? { suspended: true, suspension: su } : {}) });
 });
 
 app.post("/api/credits/consume", extCors, auth, async (req, res) => {
   const amount = Math.max(1, Math.min(parseInt(req.body && req.body.amount, 10) || 1, 100));
+
+  // A suspended account keeps its session and its billing, but cannot spend.
+  const su = suspensionOf((await db.query("select suspend_reason, suspended_until from users where id=$1", [req.userId])).rows[0]);
+  if (su) {
+    return res.status(403).json({
+      success: false,
+      data: Object.assign({ ok: false, reason: "account_suspended", suspension: su }, await creditStatus(req.userId)),
+    });
+  }
   const ent = await entitlement(req.userId);
   if (ent.unlimited) {
     // Recorded at zero cost so usage reporting stays truthful for unlimited
@@ -583,7 +603,7 @@ function audit(req, action, opts) {
 // instead of four per user.
 const USER_SELECT = `
   select u.id, u.email, u.username, u.avatar_url, u.auth_provider, u.google_id,
-         u.is_admin, u.disabled, u.daily_quota, u.created_at,
+         u.is_admin, u.disabled, u.daily_quota, u.created_at, u.suspend_reason, u.suspended_until,
          sp.daily_quota plan_quota, sp.name plan_name, fp.daily_quota free_quota,
          coalesce(s.status,'none') sub_status, s.plan sub_plan, s.provider sub_provider,
          s.current_period_end, s.provider_subscription_id,
@@ -626,6 +646,7 @@ function shapeUser(r) {
     avatarUrl: r.avatar_url,
     authProvider: r.google_id ? "google" : r.auth_provider,
     isAdmin: r.is_admin, disabled: r.disabled, createdAt: r.created_at,
+    suspension: suspensionOf(r),
     credits: {
       balance: r.balance, usedToday: r.used_today, usedTotal: r.used_total,
       grantedToday: r.granted_today,
@@ -675,7 +696,36 @@ app.get("/api/admin/users/:id", adminAuth, async (req, res) => {
   const ledger = (await db.query(
     "select delta, reason, created_at from credit_ledger where user_id=$1 order by created_at desc limit 25", [id]
   )).rows;
-  res.json(Object.assign(shapeUser(r), { ledger }));
+
+  // Enough history to see a pattern rather than a single number. Rolled up in
+  // JS for the same reason as elsewhere: a month of one account's rows is tiny,
+  // and it keeps the query off date_trunc.
+  const since = new Date(Date.now() - 29 * 864e5).toISOString();
+  const raw = (await db.query(
+    "select delta, reason, created_at from credit_ledger where user_id=$1 and created_at >= $2 order by created_at", [id, since]
+  )).rows;
+  const byDay = new Map();
+  let spent30 = 0, lastActive = null;
+  for (const row of raw) {
+    const key = new Date(row.created_at).toISOString().slice(0, 10);
+    const e = byDay.get(key) || { date: key, used: 0, granted: 0 };
+    if (row.delta < 0) { e.used += -row.delta; spent30 += -row.delta; lastActive = row.created_at; }
+    else e.granted += row.delta;
+    byDay.set(key, e);
+  }
+  const daily = Array.from(byDay.values()).sort((a, b) => (a.date < b.date ? -1 : 1));
+  const activeDays = daily.filter((d) => d.used > 0).length;
+
+  res.json(Object.assign(shapeUser(r), {
+    ledger,
+    analytics: {
+      daily,
+      spent30, activeDays,
+      avgPerActiveDay: activeDays ? Math.round((spent30 / activeDays) * 10) / 10 : 0,
+      lastActive,
+      accountAgeDays: Math.max(0, Math.floor((Date.now() - new Date(r.created_at).getTime()) / 864e5)),
+    },
+  }));
 });
 
 app.patch("/api/admin/users/:id", adminAuth, async (req, res) => {
@@ -730,7 +780,19 @@ app.post("/api/admin/users/:id/credits", adminAuth, async (req, res) => {
   if (Math.abs(delta) > 1000000) return res.status(400).json({ error: "delta_too_large" });
   if (!(await db.query("select 1 from users where id=$1", [id])).rows[0]) return res.status(404).json({ error: "not_found" });
   const reason = String((req.body && req.body.reason) || "admin_adjust").slice(0, 60);
-  await moveCredits(id, delta, reason);
+  // A deduction larger than the balance is refused rather than quietly leaving
+  // the account owing credits: a negative balance means they have to earn back
+  // past zero before they can spend again, which is never what "take 100 off
+  // this account" was meant to do. Flooring silently would be worse — the
+  // deduction would look like it applied in full.
+  const applied = await moveCredits(id, delta, reason, { requireBalance: delta < 0 });
+  if (applied === null) {
+    const have = (await db.query("select credit_balance from users where id=$1", [id])).rows[0].credit_balance;
+    return res.status(400).json({
+      error: "insufficient_balance",
+      message: "That would leave a negative balance — the account has " + have + " credit(s).",
+    });
+  }
   audit(req, "user.credits", { targetType: "user", targetId: id, detail: { delta: delta, reason: reason } });
   const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
   res.json(shapeUser(r));
@@ -839,6 +901,57 @@ app.get("/api/admin/audit", adminAuth, async (req, res) => {
   // hardcoding a list that drifts as new actions are added.
   const actions = (await db.query("select distinct action from admin_audit order by action")).rows.map((r) => r.action);
   res.json({ entries: rows, total, limit, offset, actions });
+});
+
+app.post("/api/admin/users/:id/suspend", adminAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
+  if (id === req.userId) return res.status(400).json({ error: "cannot_suspend_self" });
+  const u = (await db.query("select email from users where id=$1", [id])).rows[0];
+  if (!u) return res.status(404).json({ error: "not_found" });
+
+  const lift = req.body && req.body.lift === true;
+  if (lift) {
+    await db.query("update users set suspend_reason=null, suspended_until=null where id=$1", [id]);
+    audit(req, "user.unsuspend", { targetType: "user", targetId: id, detail: { email: u.email } });
+  } else {
+    const reason = String((req.body && req.body.reason) || "").trim().slice(0, 200);
+    if (!reason) return res.status(400).json({ error: "reason_required", message: "Say why — the account is shown this." });
+    const days = req.body && req.body.days != null ? parseInt(req.body.days, 10) : null;
+    if (days !== null && (!Number.isInteger(days) || days < 1 || days > 3650)) return res.status(400).json({ error: "bad_duration" });
+    const until = days ? new Date(Date.now() + days * 864e5).toISOString() : null;
+    await db.query("update users set suspend_reason=$1, suspended_until=$2 where id=$3", [reason, until, id]);
+    audit(req, "user.suspend", { targetType: "user", targetId: id, detail: { email: u.email, reason: reason, until: until } });
+  }
+  const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
+  res.json(shapeUser(r));
+});
+
+/* Deleting an account removes its ledger, subscription and any admin settings
+ * with it. Those tables carry no foreign keys, so nothing would stop the rows
+ * being orphaned — and an orphaned ledger row silently rejoins the next account
+ * that happens to be given the same serial id. */
+app.delete("/api/admin/users/:id", adminAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
+  if (id === req.userId) return res.status(400).json({ error: "cannot_delete_self" });
+  const u = (await db.query("select email, username, is_admin from users where id=$1", [id])).rows[0];
+  if (!u) return res.status(404).json({ error: "not_found" });
+
+  // Typing the email is the confirmation. A destructive action one stray click
+  // away from a populated list is a matter of time.
+  if (String((req.body && req.body.confirmEmail) || "").trim().toLowerCase() !== u.email.toLowerCase()) {
+    return res.status(400).json({ error: "confirm_mismatch", message: "Type the account's email exactly to confirm." });
+  }
+  if (u.is_admin) return res.status(400).json({ error: "admin_account", message: "Revoke admin before deleting this account." });
+
+  await db.query("delete from credit_ledger where user_id=$1", [id]);
+  await db.query("delete from subscriptions where user_id=$1", [id]);
+  await db.query("delete from admin_settings where user_id=$1", [id]);
+  await db.query("delete from users where id=$1", [id]);
+  // The audit entry outlives the account, so it carries what was deleted.
+  audit(req, "user.delete", { targetType: "user", targetId: id, detail: { email: u.email, username: u.username } });
+  res.json({ ok: true });
 });
 
 app.get("/api/admin/stats", adminAuth, async (req, res) => {

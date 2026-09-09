@@ -509,15 +509,11 @@
   }
 
   function userRow(u, panel) {
-    var wrap = el("div", "userrow");
     var head = el("button", "userrow-head");
-    head.addEventListener("click", function () {
-      usersState.openId = usersState.openId === u.userId ? null : u.userId; render();
-    });
+    head.addEventListener("click", function () { openUserDrawer(u.userId); });
 
     var who = el("div", "userrow-who");
-    var name = el("b", null, u.email);
-    who.appendChild(name);
+    who.appendChild(el("b", null, u.email));
     var meta = el("span", "userrow-meta");
     meta.textContent = (u.authProvider === "google" ? "Google" : "Password") + " · joined " + fmtDate(u.createdAt);
     who.appendChild(meta);
@@ -526,111 +522,329 @@
     var tags = el("div", "userrow-tags");
     if (u.isAdmin) tags.appendChild(el("span", "utag utag-admin", "admin"));
     if (u.disabled) tags.appendChild(el("span", "utag utag-off", "disabled"));
+    else if (u.suspension) tags.appendChild(el("span", "utag utag-warn", "suspended"));
     tags.appendChild(el("span", "utag utag-" + (u.subscription.status === "active" ? "on" : "muted"),
       u.subscription.status === "active" ? (u.subscription.plan || "pro") : u.subscription.status));
     tags.appendChild(el("span", "utag utag-muted", u.credits.balance + " cr"));
     head.appendChild(tags);
-    wrap.appendChild(head);
 
-    if (usersState.openId === u.userId) wrap.appendChild(userDetail(u, panel));
+    var wrap = el("div", "userrow");
+    wrap.appendChild(head);
     return wrap;
   }
 
-  function userDetail(u, panel) {
-    var d = el("div", "userrow-body");
-    var kv = el("div");
-    kvRow(kv, "User ID", String(u.userId));
-    kvRow(kv, "Username", u.username || "—");
-    kvRow(kv, "Sign-in method", u.authProvider === "google" ? "Google" : "Email + password");
-    kvRow(kv, "Credit balance", String(u.credits.balance));
-    kvRow(kv, "Used today", String(u.credits.usedToday));
-    kvRow(kv, "Used all time", String(u.credits.usedTotal));
-    kvRow(kv, "Daily quota", u.credits.dailyQuota + (u.credits.quotaIsOverride ? " (override)" : " (default)"));
-    kvRow(kv, "Subscription", u.subscription.status + (u.subscription.plan ? " · " + u.subscription.plan : ""));
-    if (u.subscription.provider) kvRow(kv, "Billing via", u.subscription.provider);
-    if (u.subscription.currentPeriodEnd) kvRow(kv, "Renews / ends", fmtDate(u.subscription.currentPeriodEnd));
-    d.appendChild(kv);
+  /* ---- user drawer ----
+   * A slide-over instead of an inline accordion, with the account pinned in the
+   * header. The old version expanded under the row, so as soon as the controls
+   * were taller than the viewport the email scrolled away and you were changing
+   * someone's plan with no idea whose. */
+  var drawer = { el: null, user: null, section: "overview", busy: false };
 
-    function apply(p) {
-      adminApi("/api/admin/users/" + u.userId, { method: "PATCH", body: p })
-        .then(function () { toast("Saved"); loadUsers(panel); })
-        .catch(function (e) {
-          toast(e.code === "cannot_lock_self_out" ? "You can't disable or demote your own admin account" : "Failed: " + e.message);
-        });
+  function closeUserDrawer() {
+    if (drawer.el) { drawer.el.remove(); drawer.el = null; }
+    document.removeEventListener("keydown", drawerEsc);
+    drawer.user = null;
+  }
+  function drawerEsc(e) { if (e.key === "Escape") closeUserDrawer(); }
+
+  function openUserDrawer(id) {
+    drawer.section = "overview";
+    document.addEventListener("keydown", drawerEsc);
+    paintDrawer(null, id);
+    adminApi("/api/admin/users/" + id)
+      .then(function (u) { drawer.user = u; paintDrawer(u, id); })
+      .catch(function (e) { toast("Couldn't load that account: " + e.message); closeUserDrawer(); });
+  }
+  function refreshDrawer() {
+    if (!drawer.user) return Promise.resolve();
+    return adminApi("/api/admin/users/" + drawer.user.userId).then(function (u) {
+      drawer.user = u; paintDrawer(u, u.userId); loadUsers();
+    });
+  }
+
+  function paintDrawer(u, id) {
+    if (!drawer.el) {
+      drawer.el = el("div", "drawer-ov");
+      drawer.el.addEventListener("mousedown", function (e) { if (e.target === drawer.el) closeUserDrawer(); });
+      var panelEl = el("aside", "drawer");
+      panelEl.addEventListener("mousedown", function (e) { e.stopPropagation(); });
+      drawer.el.appendChild(panelEl);
+      document.body.appendChild(drawer.el);
     }
+    var d = drawer.el.querySelector(".drawer");
+    d.innerHTML = "";
 
-    // Credits
-    d.appendChild(el("div", "group-title", "Credits"));
-    var cr = el("div", "row");
-    var amt = el("input"); amt.type = "number"; amt.value = "50";
-    cr.appendChild(amt);
-    cr.appendChild(btn("Add", "sm", function () {
-      var n = parseInt(amt.value, 10);
-      if (!n) { toast("Enter a non-zero amount"); return; }
-      adminApi("/api/admin/users/" + u.userId + "/credits", { method: "POST", body: { delta: Math.abs(n), reason: "admin_grant" } })
-        .then(function () { toast("Credits added"); loadUsers(panel); })
-        .catch(function (e) { toast("Failed: " + e.message); });
-    }));
-    cr.appendChild(btn("Deduct", "ghost sm", function () {
-      var n = parseInt(amt.value, 10);
-      if (!n) { toast("Enter a non-zero amount"); return; }
-      adminApi("/api/admin/users/" + u.userId + "/credits", { method: "POST", body: { delta: -Math.abs(n), reason: "admin_deduct" } })
-        .then(function () { toast("Credits deducted"); loadUsers(panel); })
-        .catch(function (e) { toast("Failed: " + e.message); });
-    }));
-    d.appendChild(cr);
+    if (!u) { d.appendChild(el("div", "drawer-head")).appendChild(el("h3", null, "Loading…")); return; }
 
-    // Daily quota
-    var qr = el("div", "row");
-    var quota = el("input"); quota.type = "number"; quota.value = String(u.credits.dailyQuota);
-    qr.appendChild(el("span", "sec-sub", "Daily quota"));
-    qr.appendChild(quota);
-    qr.appendChild(btn("Set", "sm", function () { apply({ dailyQuota: parseInt(quota.value, 10) }); }));
-    if (u.credits.quotaIsOverride) qr.appendChild(btn("Use default", "ghost sm", function () { apply({ dailyQuota: null }); }));
-    d.appendChild(qr);
+    /* Sticky identity header — this is the whole point of the drawer. */
+    var head = el("div", "drawer-head");
+    var idb = el("div", "drawer-id");
+    idb.appendChild(el("div", "avatar-sm", (u.username || u.email).slice(0, 1).toUpperCase()));
+    var idt = el("div", "drawer-idt");
+    idt.appendChild(el("b", null, u.email));
+    var sub = el("span");
+    sub.textContent = (u.username || "—") + " · " + (u.authProvider === "google" ? "Google" : "Password") + " · id " + u.userId;
+    idt.appendChild(sub);
+    idb.appendChild(idt);
+    head.appendChild(idb);
+    var x = el("button", "sbm-x", "✕"); x.setAttribute("aria-label", "Close");
+    x.addEventListener("click", closeUserDrawer);
+    head.appendChild(x);
 
-    // Subscription
-    d.appendChild(el("div", "group-title", "Subscription"));
-    var sr = el("div", "row");
+    var st = el("div", "drawer-tags");
+    if (u.isAdmin) st.appendChild(el("span", "utag utag-admin", "admin"));
+    if (u.disabled) st.appendChild(el("span", "utag utag-off", "disabled — cannot sign in"));
+    if (u.suspension) st.appendChild(el("span", "utag utag-warn", "suspended"));
+    st.appendChild(el("span", "utag utag-" + (u.subscription.status === "active" ? "on" : "muted"),
+      u.subscription.status === "active" ? "on " + (u.subscription.plan || "pro") : u.subscription.status));
+    head.appendChild(st);
+
+    var tabs = el("div", "drawer-tabs");
+    [["overview", "Overview"], ["billing", "Billing"], ["credits", "Credits"], ["access", "Access"]].forEach(function (t) {
+      var b = el("button", drawer.section === t[0] ? "on" : "", t[1]);
+      b.addEventListener("click", function () { drawer.section = t[0]; paintDrawer(drawer.user, id); });
+      tabs.appendChild(b);
+    });
+    head.appendChild(tabs);
+    d.appendChild(head);
+
+    var body = el("div", "drawer-body");
+    d.appendChild(body);
+    if (u.suspension) {
+      var warn = el("div", "callout callout-warn");
+      warn.textContent = "Suspended: " + u.suspension.reason +
+        (u.suspension.until ? " — lifts " + fmtDate(u.suspension.until) : " — no end date");
+      body.appendChild(warn);
+    }
+    ({ overview: drawerOverview, billing: drawerBilling, credits: drawerCredits, access: drawerAccess }[drawer.section])(body, u);
+  }
+
+  function apply(u, patch, okMsg) {
+    if (drawer.busy) return;
+    drawer.busy = true;
+    return adminApi("/api/admin/users/" + u.userId, { method: "PATCH", body: patch })
+      .then(function () { toast(okMsg || "Saved"); return refreshDrawer(); })
+      .catch(function (e) {
+        toast(e.code === "cannot_lock_self_out" ? "You can't disable or demote your own admin account" : "Failed: " + e.message);
+      })
+      .then(function () { drawer.busy = false; });
+  }
+
+  function drawerOverview(body, u) {
+    var a = u.analytics || { daily: [], spent30: 0, activeDays: 0, avgPerActiveDay: 0, accountAgeDays: 0 };
+    var tiles = el("div", "tiles");
+    [["Credits left", String(u.credits.balance)],
+     ["Used in 30d", String(a.spent30)],
+     ["Active days", String(a.activeDays)],
+     ["Avg / active day", String(a.avgPerActiveDay)]].forEach(function (t) {
+      var c = el("div", "tile"); c.appendChild(el("div", "v", t[1])); c.appendChild(el("div", "l", t[0]));
+      tiles.appendChild(c);
+    });
+    body.appendChild(tiles);
+
+    var ch = el("div", "card pad"); ch.appendChild(h3ic("analytics", "Last 30 days"));
+    if (!a.daily.length) ch.appendChild(el("p", "sec-sub", "No activity recorded yet."));
+    else ch.appendChild(miniChart(a.daily));
+    body.appendChild(ch);
+
+    var kvc = el("div", "card pad"); kvc.appendChild(h3ic("user", "Account"));
+    var kv = el("div"); kv.style.marginTop = "10px";
+    kvRow(kv, "Joined", fmtDate(u.createdAt) + " (" + a.accountAgeDays + " days ago)");
+    kvRow(kv, "Last used", a.lastActive ? fmtDate(a.lastActive) : "never");
+    kvRow(kv, "Sign-in", u.authProvider === "google" ? "Google" : "Email + password");
+    kvRow(kv, "Daily quota", u.credits.dailyQuota + (u.credits.quotaIsOverride ? " (override)" : " (from plan)"));
+    kvc.appendChild(kv);
+    body.appendChild(kvc);
+  }
+
+  /* Inline SVG: one series of bars, and the site's CSP blocks third-party
+   * scripts anyway. */
+  function miniChart(daily) {
+    var days = [];
+    for (var i = 29; i >= 0; i--) {
+      var key = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
+      var hit = daily.filter(function (x) { return x.date === key; })[0];
+      days.push({ date: key, used: hit ? hit.used : 0 });
+    }
+    var max = Math.max(1, Math.max.apply(null, days.map(function (d) { return d.used; })));
+    var W = 640, H = 120, gap = 3, bw = (W - gap * (days.length - 1)) / days.length;
+    var ns = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    svg.setAttribute("class", "chart");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", "Credits spent per day over the last 30 days, peak " + max + ".");
+    days.forEach(function (d, i) {
+      var h = d.used ? Math.max(3, (d.used / max) * H) : 2;
+      var r = document.createElementNS(ns, "rect");
+      r.setAttribute("x", (i * (bw + gap)).toFixed(2)); r.setAttribute("y", (H - h).toFixed(2));
+      r.setAttribute("width", bw.toFixed(2)); r.setAttribute("height", h.toFixed(2));
+      r.setAttribute("rx", "2"); r.setAttribute("class", d.used ? "bar" : "bar zero");
+      var t = document.createElementNS(ns, "title");
+      t.textContent = d.date + ": " + d.used + (d.used === 1 ? " credit" : " credits");
+      r.appendChild(t); svg.appendChild(r);
+    });
+    var wrap = el("div", "chart-wrap"); wrap.appendChild(svg);
+    wrap.appendChild(el("p", "sec-sub", "Peak " + max + " on a single day."));
+    return wrap;
+  }
+
+  function drawerBilling(body, u) {
+    var c = el("div", "card pad"); c.appendChild(h3ic("subscription", "Subscription"));
+    var kv = el("div"); kv.style.marginTop = "10px";
+    kvRow(kv, "Status", u.subscription.status);
+    kvRow(kv, "Plan", u.subscription.plan || "—");
+    if (u.subscription.provider) kvRow(kv, "Billed via", u.subscription.provider);
+    if (u.subscription.currentPeriodEnd) kvRow(kv, "Period ends", fmtDate(u.subscription.currentPeriodEnd));
+    if (u.subscription.providerSubscriptionId) kvRow(kv, "Provider ref", u.subscription.providerSubscriptionId);
+    c.appendChild(kv);
+    body.appendChild(c);
+
+    var e = el("div", "card pad"); e.appendChild(h3ic("credit", "Change subscription"));
+    var r1 = el("div", "row"); r1.style.marginTop = "10px";
     var sel = el("select");
-    [["none", "None"], ["active", "Active"], ["past_due", "Past due"], ["cancelled", "Cancelled"]].forEach(function (o) {
+    [["none", "No subscription"], ["active", "Active"], ["past_due", "Past due"], ["cancelled", "Cancelled"]].forEach(function (o) {
       var op = el("option", null, o[1]); op.value = o[0];
       if (u.subscription.status === o[0]) op.selected = true;
       sel.appendChild(op);
     });
-    // A dropdown of real plans, not free text: a typo like "Pro" matches no
-    // plan row and silently resolves back to free entitlements.
     var planIn = el("select");
-    var noneOpt = el("option", null, "— no plan —"); noneOpt.value = ""; planIn.appendChild(noneOpt);
+    var none = el("option", null, "— no plan —"); none.value = ""; planIn.appendChild(none);
     (plansState.data || []).forEach(function (pl) {
       var op = el("option", null, pl.name + " (" + (pl.unlimited ? "unlimited" : pl.dailyQuota + "/day") + ")");
-      op.value = pl.id;
-      if (u.subscription.plan === pl.id) op.selected = true;
+      op.value = pl.id; if (u.subscription.plan === pl.id) op.selected = true;
       planIn.appendChild(op);
     });
-    // A plan that was deleted after someone subscribed still has to be shown,
-    // or saving this form would quietly reassign them.
     if (u.subscription.plan && !(plansState.data || []).some(function (pl) { return pl.id === u.subscription.plan; })) {
       var orphan = el("option", null, u.subscription.plan + " (missing plan)");
       orphan.value = u.subscription.plan; orphan.selected = true; planIn.appendChild(orphan);
     }
-    sr.appendChild(sel); sr.appendChild(planIn);
-    sr.appendChild(btn("Apply", "sm", function () {
-      apply({ subscription: { status: sel.value, plan: planIn.value || null } });
+    r1.appendChild(sel); r1.appendChild(planIn);
+    r1.appendChild(btn("Apply", "sm", function () {
+      apply(u, { subscription: { status: sel.value, plan: planIn.value || null } }, "Subscription updated");
     }));
-    d.appendChild(sr);
-    d.appendChild(el("p", "sec-sub", "Setting this by hand marks the subscription as manually managed. A Razorpay webhook will overwrite it on the next billing event."));
+    e.appendChild(r1);
+    e.appendChild(el("p", "sec-sub", "Set by hand this counts as manually managed. A Razorpay webhook overwrites it on the next billing event."));
+    body.appendChild(e);
+  }
 
-    // Access
-    d.appendChild(el("div", "group-title", "Access"));
-    var ar = el("div", "row");
-    ar.appendChild(btn(u.disabled ? "Re-enable account" : "Disable account", u.disabled ? "sm" : "ghost sm", function () {
-      apply({ disabled: !u.disabled });
+  function drawerCredits(body, u) {
+    var c = el("div", "card pad"); c.appendChild(h3ic("credit", "Balance"));
+    var kv = el("div"); kv.style.marginTop = "10px";
+    kvRow(kv, "Credits left", String(u.credits.balance));
+    kvRow(kv, "Used today", String(u.credits.usedToday));
+    kvRow(kv, "Used all time", String(u.credits.usedTotal));
+    kvRow(kv, "Daily quota", u.credits.dailyQuota + (u.credits.quotaIsOverride ? " (override)" : " (from plan)"));
+    c.appendChild(kv);
+
+    var r = el("div", "row"); r.style.marginTop = "12px";
+    var amt = el("input"); amt.type = "number"; amt.value = "50";
+    r.appendChild(amt);
+    r.appendChild(btn("Add", "sm", function () { moveUserCredits(u, Math.abs(parseInt(amt.value, 10) || 0), "admin_grant"); }));
+    r.appendChild(btn("Deduct", "ghost sm", function () { moveUserCredits(u, -Math.abs(parseInt(amt.value, 10) || 0), "admin_deduct"); }));
+    c.appendChild(r);
+
+    var q = el("div", "row");
+    var quota = el("input"); quota.type = "number"; quota.value = String(u.credits.dailyQuota);
+    q.appendChild(el("span", "sec-sub", "Daily quota"));
+    q.appendChild(quota);
+    q.appendChild(btn("Set", "sm", function () { apply(u, { dailyQuota: parseInt(quota.value, 10) }, "Quota updated"); }));
+    if (u.credits.quotaIsOverride) q.appendChild(btn("Follow the plan", "ghost sm", function () { apply(u, { dailyQuota: null }, "Now follows the plan"); }));
+    c.appendChild(q);
+    body.appendChild(c);
+
+    var l = el("div", "card pad"); l.appendChild(h3ic("history", "Recent ledger"));
+    if (!(u.ledger || []).length) l.appendChild(el("p", "sec-sub", "Nothing yet."));
+    else {
+      var list = el("div"); list.style.marginTop = "8px";
+      u.ledger.forEach(function (row) {
+        var d2 = el("div", "kv");
+        var left = el("span"); left.textContent = row.reason + " · " + fmtDate(row.created_at);
+        d2.appendChild(left);
+        d2.appendChild(el("b", null, (row.delta > 0 ? "+" : "") + row.delta));
+        list.appendChild(d2);
+      });
+      l.appendChild(list);
+    }
+    body.appendChild(l);
+  }
+  function moveUserCredits(u, delta, reason) {
+    if (!delta) { toast("Enter a non-zero amount"); return; }
+    adminApi("/api/admin/users/" + u.userId + "/credits", { method: "POST", body: { delta: delta, reason: reason } })
+      .then(function () { toast(delta > 0 ? "Credits added" : "Credits deducted"); return refreshDrawer(); })
+      .catch(function (e) { toast("Failed: " + e.message); });
+  }
+
+  /* Access. The three states are deliberately different things, or there would
+   * be no reason for three controls:
+   *   suspend — can still sign in and manage billing, cannot spend credits
+   *   disable — cannot sign in at all
+   *   delete  — the account and its history are gone */
+  function drawerAccess(body, u) {
+    var s = el("div", "card pad"); s.appendChild(h3ic("user", "Suspend"));
+    s.appendChild(el("p", "sec-sub", "Blocks credit use while leaving sign-in and billing alone. Use it to pause an account without locking someone out of their own subscription."));
+    if (u.suspension) {
+      var cur = el("div"); cur.style.marginTop = "10px";
+      kvRow(cur, "Reason", u.suspension.reason);
+      kvRow(cur, "Lifts", u.suspension.until ? fmtDate(u.suspension.until) : "no end date — stays until lifted");
+      s.appendChild(cur);
+      var lr = el("div", "row");
+      lr.appendChild(btn("Lift suspension", "sm", function () {
+        adminApi("/api/admin/users/" + u.userId + "/suspend", { method: "POST", body: { lift: true } })
+          .then(function () { toast("Suspension lifted"); return refreshDrawer(); })
+          .catch(function (e) { toast("Failed: " + e.message); });
+      }));
+      s.appendChild(lr);
+    } else {
+      var reason = el("input"); reason.type = "text"; reason.placeholder = "Reason (the account is shown this)";
+      reason.style.minWidth = "260px";
+      var days = el("input"); days.type = "number"; days.placeholder = "days"; days.value = "7";
+      var sr = el("div", "row"); sr.style.marginTop = "10px";
+      sr.appendChild(reason); sr.appendChild(days);
+      sr.appendChild(btn("Suspend", "sm", function () {
+        var v = reason.value.trim();
+        if (!v) { toast("Give a reason — the account is shown it"); return; }
+        var n = parseInt(days.value, 10);
+        adminApi("/api/admin/users/" + u.userId + "/suspend", { method: "POST", body: { reason: v, days: n > 0 ? n : null } })
+          .then(function () { toast("Account suspended"); return refreshDrawer(); })
+          .catch(function (e) { toast(e.code === "cannot_suspend_self" ? "You can't suspend your own account" : "Failed: " + e.message); });
+      }));
+      s.appendChild(sr);
+      s.appendChild(el("p", "sec-sub", "Leave days empty for an open-ended hold. A dated suspension lifts itself."));
+    }
+    body.appendChild(s);
+
+    var d = el("div", "card pad"); d.appendChild(h3ic("maintenance", "Disable"));
+    d.appendChild(el("p", "sec-sub", "Blocks sign-in everywhere — the site, the extension and Google. Billing is untouched."));
+    var dr = el("div", "row"); dr.style.marginTop = "10px";
+    dr.appendChild(btn(u.disabled ? "Re-enable sign-in" : "Disable sign-in", u.disabled ? "sm" : "ghost sm", function () {
+      apply(u, { disabled: !u.disabled }, u.disabled ? "Sign-in re-enabled" : "Sign-in disabled");
     }));
-    ar.appendChild(btn(u.isAdmin ? "Revoke admin" : "Make admin", "ghost sm", function () { apply({ isAdmin: !u.isAdmin }); }));
-    d.appendChild(ar);
-    if (!u.disabled) d.appendChild(el("p", "sec-sub", "Disabling blocks sign-in everywhere — the website, the extension, and Google."));
-    return d;
+    dr.appendChild(btn(u.isAdmin ? "Revoke admin" : "Make admin", "ghost sm", function () {
+      apply(u, { isAdmin: !u.isAdmin }, u.isAdmin ? "Admin revoked" : "Admin granted");
+    }));
+    d.appendChild(dr);
+    body.appendChild(d);
+
+    var del = el("div", "card pad danger-card"); del.appendChild(h3ic("maintenance", "Delete account"));
+    del.appendChild(el("p", "sec-sub", "Removes the account, its credit history and its subscription. This cannot be undone — suspend or disable instead if you might want it back."));
+    var confirm = el("input"); confirm.type = "text"; confirm.placeholder = "Type " + u.email + " to confirm";
+    confirm.style.minWidth = "280px";
+    var delr = el("div", "row"); delr.style.marginTop = "10px";
+    delr.appendChild(confirm);
+    delr.appendChild(btn("Delete permanently", "danger sm", function () {
+      adminApi("/api/admin/users/" + u.userId, { method: "DELETE", body: { confirmEmail: confirm.value.trim() } })
+        .then(function () { toast("Account deleted"); closeUserDrawer(); loadUsers(); })
+        .catch(function (e) {
+          toast({
+            confirm_mismatch: "Type the account's email exactly to confirm.",
+            admin_account: "Revoke admin on this account before deleting it.",
+            cannot_delete_self: "You can't delete your own account."
+          }[e.code] || ("Failed: " + e.message));
+        });
+    }));
+    del.appendChild(delr);
+    body.appendChild(del);
   }
 
   /* ---- Plans ----

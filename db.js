@@ -85,6 +85,13 @@ alter table users add column if not exists credit_balance integer not null defau
 -- Per-user override of the global DAILY_FREE allowance. NULL = use the default,
 -- so raising the default still lifts everyone who was never given an override.
 alter table users add column if not exists daily_quota  integer;
+-- Suspension is deliberately NOT the same thing as disabling, or there would be
+-- no reason for two controls: a disabled account cannot sign in at all, while a
+-- suspended one can still sign in, see why, and manage its billing — it just
+-- can't spend credits. That distinction is what lets you pause someone during
+-- an investigation without locking them out of their own subscription.
+alter table users add column if not exists suspended_until timestamptz;
+alter table users add column if not exists suspend_reason  text;
 -- Razorpay bookkeeping. provider is stored rather than assumed so a second
 -- processor later doesn't require reinterpreting existing rows.
 alter table subscriptions add column if not exists provider    text;
