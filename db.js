@@ -75,6 +75,13 @@ alter table users add column if not exists totp_secret  text;
 alter table users add column if not exists totp_enabled boolean not null default false;
 -- Admin controls over an individual account.
 alter table users add column if not exists disabled     boolean not null default false;
+-- The spendable counter. credit_ledger stays the audit trail, but a balance
+-- cannot be safely enforced by "read the sum, then insert": two concurrent
+-- requests both read the same sum and both spend it. A guarded single-statement
+-- UPDATE (see consumeCredits) can't interleave that way, and unlike a row lock
+-- its correctness doesn't depend on the surrounding code getting a transaction
+-- right. Backfilled from the ledger on boot.
+alter table users add column if not exists credit_balance integer not null default 0;
 -- Per-user override of the global DAILY_FREE allowance. NULL = use the default,
 -- so raising the default still lifts everyone who was never given an override.
 alter table users add column if not exists daily_quota  integer;
@@ -93,14 +100,62 @@ create table if not exists webhook_events (
   received_at  timestamptz not null default now()
 );
 create index if not exists credit_ledger_user_created on credit_ledger (user_id, created_at);
+-- What each plan actually grants. Previously "pro" was just a string on the
+-- subscription with nothing behind it, so no plan changed what a user could do.
+-- daily_quota of -1 means unlimited.
+create table if not exists plans (
+  id               text primary key,
+  name             text not null,
+  daily_quota      integer not null,
+  price_inr        integer not null default 0,
+  razorpay_plan_id text,
+  active           boolean not null default true,
+  sort_order       integer not null default 0
+);
 `;
+
+// Seeded rather than hardcoded so the Control Room can edit them, but only when
+// absent — this runs on every boot and must never overwrite edited pricing.
+const DEFAULT_PLANS = [
+  { id: "free", name: "Free", daily_quota: 15, price_inr: 0, sort_order: 0 },
+  { id: "pro", name: "Pro", daily_quota: 500, price_inr: 499, sort_order: 1 },
+  { id: "unlimited", name: "Unlimited", daily_quota: -1, price_inr: 1499, sort_order: 2 },
+];
+
+/* Brings users.credit_balance in line with the ledger. Runs on boot so the
+ * column is correct for accounts that predate it, and so any drift between the
+ * two is corrected rather than compounding. */
+async function reconcileBalances() {
+  const sums = (await getPool().query(
+    "select user_id, sum(delta)::int s from credit_ledger group by user_id"
+  )).rows;
+  const byUser = new Map(sums.map((r) => [r.user_id, r.s]));
+  const users = (await getPool().query("select id, credit_balance from users")).rows;
+  let fixed = 0;
+  for (const u of users) {
+    const expected = byUser.get(u.id) || 0;
+    if (u.credit_balance !== expected) {
+      await getPool().query("update users set credit_balance=$1 where id=$2", [expected, u.id]);
+      fixed++;
+    }
+  }
+  if (fixed) console.log("[credits] reconciled balance for " + fixed + " account(s)");
+}
 
 async function init() {
   await getPool().query(SCHEMA);
+  for (const p of DEFAULT_PLANS) {
+    await getPool().query(
+      `insert into plans (id, name, daily_quota, price_inr, sort_order) values ($1,$2,$3,$4,$5)
+       on conflict (id) do nothing`,
+      [p.id, p.name, p.daily_quota, p.price_inr, p.sort_order]
+    );
+  }
+  await reconcileBalances();
 }
 
 function query(text, params) {
   return getPool().query(text, params);
 }
 
-module.exports = { getPool, init, query };
+module.exports = { getPool, init, query, reconcileBalances };

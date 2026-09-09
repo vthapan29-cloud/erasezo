@@ -73,7 +73,7 @@ function rzpPost(payload, { secret = "whsec-test", eventId = null } = {}) {
   assert.strictEqual(pw.credits.grantedToday, 15, "daily free credits were granted at signup");
   assert.strictEqual(pw.credits.usedToday, 0, "nothing used yet");
   assert.strictEqual(pw.credits.dailyQuota, 15, "quota falls back to the global default");
-  await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,-4,'image_clean')", [pw.userId]);
+  await req("admin", `/api/admin/users/${pw.userId}/credits`, { method: "POST", body: { delta: -4, reason: "image_clean" } });
   const afterUse = await (await req("admin", `/api/admin/users/${pw.userId}`)).json();
   assert.strictEqual(afterUse.credits.usedToday, 4, "usage is counted");
   assert.strictEqual(afterUse.credits.balance, 11, "balance nets grants against usage");

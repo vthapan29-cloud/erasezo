@@ -115,7 +115,11 @@ async function adminAuth(req, res, next) {
   next();
 }
 function auth(req, res, next) {
-  const t = req.cookies && req.cookies[COOKIE];
+  // Cookie for the website; Bearer for the extension's background worker, whose
+  // requests are cross-site from a chrome-extension:// origin and so never
+  // carry the SameSite=Lax cookie.
+  const bearer = /^Bearer (.+)$/.exec(req.get("authorization") || "");
+  const t = (req.cookies && req.cookies[COOKIE]) || (bearer && bearer[1]);
   if (!t) return res.status(401).json({ error: "not_authenticated" });
   try { req.userId = jwt.verify(t, JWT_SECRET).uid; next(); }
   catch (e) { return res.status(401).json({ error: "invalid_token" }); }
@@ -143,19 +147,88 @@ async function userPublic(id) {
   };
 }
 
-// Grant today's free quota once per UTC day (idempotent).
+/* What this account is actually entitled to, in one place so the extension,
+ * the dashboard and the Control Room can never disagree. Precedence:
+ *   1. users.daily_quota — an explicit per-account decision by an admin
+ *   2. the plan behind an ACTIVE subscription
+ *   3. the free plan
+ * A quota below zero means unlimited. */
+async function entitlement(uid) {
+  const u = (await db.query("select daily_quota from users where id=$1", [uid])).rows[0];
+  const sub = (await db.query("select status, plan from subscriptions where user_id=$1", [uid])).rows[0];
+  const planId = (sub && sub.status === "active" && sub.plan) ? sub.plan : "free";
+  const plan = (await db.query("select id, name, daily_quota from plans where id=$1", [planId])).rows[0]
+    || (await db.query("select id, name, daily_quota from plans where id='free'")).rows[0]
+    || { id: "free", name: "Free", daily_quota: DAILY_FREE };
+
+  const override = u && u.daily_quota != null ? u.daily_quota : null;
+  const quota = override != null ? override : plan.daily_quota;
+  return {
+    planId: plan.id, planName: plan.name,
+    quota,
+    unlimited: quota < 0,
+    source: override != null ? "user_override" : (sub && sub.status === "active" ? "subscription" : "free_plan"),
+    subscriptionStatus: (sub && sub.status) || "none",
+  };
+}
+
+async function balanceOf(uid) {
+  const r = (await db.query("select credit_balance from users where id=$1", [uid])).rows[0];
+  return r ? Number(r.credit_balance) : 0;
+}
+
+/* The single way credits ever move. The ledger is the audit trail; the balance
+ * column is the counter that gets enforced, and the two are written together.
+ *
+ * A grant just adds. A spend passes `requireBalance`, which puts the check
+ * INSIDE the UPDATE's WHERE clause: two concurrent spends cannot both pass it,
+ * because the second one re-evaluates against the row the first already wrote.
+ * Doing this as "read the sum, decide, then insert" is what lets someone spend
+ * their last credit twice by double-clicking. */
+async function moveCredits(uid, delta, reason, { requireBalance = false } = {}) {
+  const sql = requireBalance
+    ? "update users set credit_balance = credit_balance + $2 where id=$1 and credit_balance >= $3 returning credit_balance"
+    : "update users set credit_balance = credit_balance + $2 where id=$1 returning credit_balance";
+  const params = requireBalance ? [uid, delta, -delta] : [uid, delta];
+  const r = await db.query(sql, params);
+  if (!r.rows[0]) return null; // insufficient, or no such user
+  await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,$2,$3)", [uid, delta, reason]);
+  return Number(r.rows[0].credit_balance);
+}
+
+/* Tops the balance UP TO the day's quota rather than adding to it. Adding meant
+ * an account that sat idle for a fortnight came back with a fortnight's worth
+ * of credits — the reason live accounts are sitting on 180. Topping up keeps
+ * "N per day" honest, while an admin bonus that already puts someone above
+ * their quota is left alone rather than being cancelled out. */
 async function grantDailyIfNeeded(uid) {
-  const has = (await db.query(
+  const already = (await db.query(
     "select 1 from credit_ledger where user_id=$1 and reason='daily_free' and created_at >= $2 limit 1",
     [uid, utcMidnight()]
   )).rows[0];
-  if (has) return;
-  // A per-user override beats the global default; NULL means "just use the
-  // default", so raising DAILY_FREE still lifts everyone who has no override.
-  const u = (await db.query("select daily_quota from users where id=$1", [uid])).rows[0];
-  const amount = u && u.daily_quota != null ? u.daily_quota : DAILY_FREE;
-  if (amount <= 0) return;
-  await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,$2,'daily_free')", [uid, amount]);
+  if (already) return;
+  const ent = await entitlement(uid);
+  if (ent.unlimited) return; // nothing to meter
+  const topUp = ent.quota - (await balanceOf(uid));
+  if (topUp <= 0) return;
+  await moveCredits(uid, topUp, "daily_free");
+}
+
+// The shape the extension's worker and sidepanel already expect.
+async function creditStatus(uid) {
+  const ent = await entitlement(uid);
+  const balance = await balanceOf(uid);
+  const reset = new Date(); reset.setUTCHours(24, 0, 0, 0);
+  return {
+    kind: ent.unlimited ? "paid" : (ent.subscriptionStatus === "active" ? "paid" : "free"),
+    plan: ent.planId, planName: ent.planName,
+    remaining: ent.unlimited ? 999999 : Math.max(0, balance),
+    limit: ent.unlimited ? 0 : ent.quota, // the client reads limit 0 as unlimited
+    unlimited: ent.unlimited,
+    emailVerified: true, isEmailVerified: true,
+    resetAt: reset.toISOString(),
+    unavailable: false,
+  };
 }
 
 /* A disabled account must be turned away at every door, not just the one the
@@ -207,9 +280,45 @@ app.get("/api/me", auth, async (req, res) => {
 });
 
 app.get("/api/credits", auth, async (req, res) => {
-  const total = Number((await db.query("select coalesce(sum(delta),0) s from credit_ledger where user_id=$1", [req.userId])).rows[0].s);
+  const total = await balanceOf(req.userId);
   const today = Number((await db.query("select coalesce(sum(delta),0) s from credit_ledger where user_id=$1 and created_at >= $2", [req.userId, utcMidnight()])).rows[0].s);
-  res.json({ total, today, dailyQuota: DAILY_FREE });
+  const ent = await entitlement(req.userId);
+  res.json({ total, today, dailyQuota: ent.quota, plan: ent.planId, unlimited: ent.unlimited });
+});
+
+/* ---------- credits the extension actually spends ----------
+ * extCors + Bearer: these are called by the extension's background worker,
+ * which is cross-origin and cannot send the session cookie.
+ *
+ * The response is wrapped as {success, data:{…}} because that is the shape the
+ * already-built sidepanel destructures; changing it would mean editing minified
+ * bundle code for no gain. */
+app.get("/api/credits/status", extCors, auth, async (req, res) => {
+  await grantDailyIfNeeded(req.userId);
+  res.json({ success: true, data: await creditStatus(req.userId) });
+});
+
+app.post("/api/credits/consume", extCors, auth, async (req, res) => {
+  const amount = Math.max(1, Math.min(parseInt(req.body && req.body.amount, 10) || 1, 100));
+  const ent = await entitlement(req.userId);
+  if (ent.unlimited) {
+    // Recorded at zero cost so usage reporting stays truthful for unlimited
+    // plans without the balance drifting.
+    await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,0,'usage_unlimited')", [req.userId]);
+    return res.json({ success: true, data: Object.assign({ ok: true }, await creditStatus(req.userId)) });
+  }
+
+  await grantDailyIfNeeded(req.userId);
+
+  const reason = String((req.body && req.body.note) || "usage").slice(0, 60);
+  const left = await moveCredits(req.userId, -amount, reason, { requireBalance: true });
+  if (left === null) {
+    return res.status(402).json({
+      success: false,
+      data: Object.assign({ ok: false, reason: "insufficient_credits" }, await creditStatus(req.userId)),
+    });
+  }
+  res.json({ success: true, data: Object.assign({ ok: true }, await creditStatus(req.userId)) });
 });
 
 /* ---------- profile ---------- */
@@ -391,17 +500,23 @@ app.put("/api/admin/settings", adminAuth, async (req, res) => {
 const USER_SELECT = `
   select u.id, u.email, u.username, u.avatar_url, u.auth_provider, u.google_id,
          u.is_admin, u.disabled, u.daily_quota, u.created_at,
+         sp.daily_quota plan_quota, sp.name plan_name, fp.daily_quota free_quota,
          coalesce(s.status,'none') sub_status, s.plan sub_plan, s.provider sub_provider,
          s.current_period_end, s.provider_subscription_id,
-         coalesce(cl.balance,0)::int balance,
+         u.credit_balance::int balance,
          coalesce(cl.used_total,0)::int used_total,
          coalesce(td.used_today,0)::int used_today,
          coalesce(td.granted_today,0)::int granted_today
   from users u
   left join subscriptions s on s.user_id = u.id
+  -- Resolve the SAME entitlement the server enforces. Reading only
+  -- users.daily_quota here meant the panel showed a Pro subscriber "15/day"
+  -- while the extension let them have 500 — the panel and the enforcement
+  -- disagreeing is worse than either being wrong on its own.
+  left join plans sp on sp.id = s.plan and s.status = 'active'
+  left join plans fp on fp.id = 'free'
   left join (
     select user_id,
-           sum(delta) balance,
            sum(case when delta < 0 then -delta else 0 end) used_total
     from credit_ledger group by user_id
   ) cl on cl.user_id = u.id
@@ -412,6 +527,15 @@ const USER_SELECT = `
     from credit_ledger where created_at >= $1 group by user_id
   ) td on td.user_id = u.id`;
 
+// Mirrors entitlement()'s precedence: an admin's per-account decision, then
+// the plan behind an active subscription, then free.
+function effectiveQuota(r) {
+  if (r.daily_quota != null) return r.daily_quota;
+  if (r.plan_quota != null) return r.plan_quota;
+  if (r.free_quota != null) return r.free_quota;
+  return DAILY_FREE;
+}
+
 function shapeUser(r) {
   return {
     userId: r.id, email: r.email, username: r.username || r.email.split("@")[0],
@@ -421,8 +545,11 @@ function shapeUser(r) {
     credits: {
       balance: r.balance, usedToday: r.used_today, usedTotal: r.used_total,
       grantedToday: r.granted_today,
-      dailyQuota: r.daily_quota == null ? DAILY_FREE : r.daily_quota,
+      dailyQuota: effectiveQuota(r),
+      unlimited: effectiveQuota(r) < 0,
       quotaIsOverride: r.daily_quota != null,
+      quotaSource: r.daily_quota != null ? "user_override"
+        : (r.plan_quota != null ? "plan" : "free_plan"),
     },
     subscription: {
       status: r.sub_status, plan: r.sub_plan, provider: r.sub_provider,
@@ -508,9 +635,82 @@ app.post("/api/admin/users/:id/credits", adminAuth, async (req, res) => {
   if (Math.abs(delta) > 1000000) return res.status(400).json({ error: "delta_too_large" });
   if (!(await db.query("select 1 from users where id=$1", [id])).rows[0]) return res.status(404).json({ error: "not_found" });
   const reason = String((req.body && req.body.reason) || "admin_adjust").slice(0, 60);
-  await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,$2,$3)", [id, delta, reason]);
+  await moveCredits(id, delta, reason);
   const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
   res.json(shapeUser(r));
+});
+
+/* ---------- Control Room: plans ----------
+ * What each tier actually grants. Before this, "pro" was a bare string on a
+ * subscription with nothing behind it — setting it changed a label and nothing
+ * a user could do. */
+app.get("/api/admin/plans", adminAuth, async (req, res) => {
+  const plans = (await db.query("select * from plans order by sort_order, id")).rows;
+  // How many people are on each, so a plan is never edited or retired blind.
+  const counts = (await db.query(
+    "select plan, count(*)::int c from subscriptions where status='active' and plan is not null group by plan"
+  )).rows.reduce((m, r) => { m[r.plan] = r.c; return m; }, {});
+  res.json({
+    plans: plans.map((p) => ({
+      id: p.id, name: p.name, dailyQuota: p.daily_quota, unlimited: p.daily_quota < 0,
+      priceInr: p.price_inr, razorpayPlanId: p.razorpay_plan_id,
+      active: p.active, sortOrder: p.sort_order,
+      activeSubscribers: counts[p.id] || 0,
+    })),
+  });
+});
+
+function readPlanBody(b) {
+  const quota = parseInt(b.dailyQuota, 10);
+  if (!Number.isInteger(quota) || quota < -1 || quota > 1000000) return { error: "bad_quota" };
+  const price = parseInt(b.priceInr, 10);
+  if (!Number.isInteger(price) || price < 0 || price > 10000000) return { error: "bad_price" };
+  const name = String(b.name || "").trim().slice(0, 60);
+  if (!name) return { error: "bad_name" };
+  return {
+    name, quota, price,
+    razorpayPlanId: b.razorpayPlanId ? String(b.razorpayPlanId).trim().slice(0, 80) : null,
+    active: b.active !== false,
+    sortOrder: Number.isInteger(parseInt(b.sortOrder, 10)) ? parseInt(b.sortOrder, 10) : 0,
+  };
+}
+
+app.post("/api/admin/plans", adminAuth, async (req, res) => {
+  const b = req.body || {};
+  const id = String(b.id || "").trim().toLowerCase();
+  if (!/^[a-z0-9_-]{2,40}$/.test(id)) return res.status(400).json({ error: "bad_id" });
+  const v = readPlanBody(b);
+  if (v.error) return res.status(400).json({ error: v.error });
+  if ((await db.query("select 1 from plans where id=$1", [id])).rows[0]) return res.status(409).json({ error: "already_exists" });
+  await db.query(
+    "insert into plans (id, name, daily_quota, price_inr, razorpay_plan_id, active, sort_order) values ($1,$2,$3,$4,$5,$6,$7)",
+    [id, v.name, v.quota, v.price, v.razorpayPlanId, v.active, v.sortOrder]
+  );
+  res.json({ ok: true });
+});
+
+app.patch("/api/admin/plans/:id", adminAuth, async (req, res) => {
+  const id = String(req.params.id);
+  const v = readPlanBody(req.body || {});
+  if (v.error) return res.status(400).json({ error: v.error });
+  const r = await db.query(
+    "update plans set name=$2, daily_quota=$3, price_inr=$4, razorpay_plan_id=$5, active=$6, sort_order=$7 where id=$1",
+    [id, v.name, v.quota, v.price, v.razorpayPlanId, v.active, v.sortOrder]
+  );
+  if (!r.rowCount) return res.status(404).json({ error: "not_found" });
+  res.json({ ok: true });
+});
+
+app.delete("/api/admin/plans/:id", adminAuth, async (req, res) => {
+  const id = String(req.params.id);
+  // `free` is the fallback every unsubscribed account resolves to; deleting it
+  // would silently drop everyone to the hardcoded default.
+  if (id === "free") return res.status(400).json({ error: "cannot_delete_free" });
+  const inUse = (await db.query("select count(*)::int c from subscriptions where plan=$1 and status='active'", [id])).rows[0].c;
+  if (inUse > 0) return res.status(409).json({ error: "plan_in_use", message: inUse + " active subscriber(s) are on this plan. Move them first, or just deactivate it." });
+  const r = await db.query("delete from plans where id=$1", [id]);
+  if (!r.rowCount) return res.status(404).json({ error: "not_found" });
+  res.json({ ok: true });
 });
 
 app.get("/api/admin/stats", adminAuth, async (req, res) => {

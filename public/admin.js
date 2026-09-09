@@ -105,6 +105,7 @@
   var SCHEMA = [
     { id: "dashboard", title: "Dashboard", icon: "📊", custom: renderDashboard },
     { id: "users", title: "Users", icon: "👤", custom: renderUsers },
+    { id: "plans", title: "Plans", icon: "💳", custom: renderPlans },
     { id: "detection", title: "Detection", icon: "🎯",
       desc: "How the sparkle is located. Lower nccAccept catches fainter marks; the scan finds it when it drifts off the auto position.",
       groups: [{ title: "Image detection · erasioToolImageSettings", fields: [
@@ -386,15 +387,18 @@
     // Subscription
     var sc = el("div", "card pad"); sc.appendChild(h3ic("subscription", "Subscription"));
     var skv = el("div"); skv.style.margin = "12px 0";
-    kvRow(skv, "Current plan", plan);
-    kvRow(skv, "Renews", cs.resetAt ? new Date(cs.resetAt).toLocaleDateString() : "—");
-    kvRow(skv, "Bypass", unlimited ? "Active (worker forces ∞)" : "Off");
+    kvRow(skv, "Current plan", cs.planName || plan);
+    kvRow(skv, "Resets", cs.resetAt ? new Date(cs.resetAt).toLocaleString() : "—");
+    kvRow(skv, "Allowance", unlimited ? "Unlimited" : ((cs.remaining != null ? cs.remaining : "—") + " of " + (cs.limit != null ? cs.limit : "—")));
     sc.appendChild(skv);
     var srow = el("div", "row");
-    srow.appendChild(btn("Force Pro / unlimited", "sm", function () { setCredit({ kind: "paid", remaining: 999999, limit: 0, emailVerified: true, isEmailVerified: true, resetAt: null, unavailable: false }); }));
-    srow.appendChild(btn("Sync from server", "ghost sm", function () { sendMsg({ action: "erasioCreditStatus" }); toast("Sync requested"); setTimeout(reload, 600); }));
+    srow.appendChild(btn("Sync from server", "sm", function () { sendMsg({ action: "erasioCreditStatus", force: true }); toast("Sync requested"); setTimeout(reload, 900); }));
     sc.appendChild(srow);
-    var note = el("div", "callout"); note.innerHTML = "The worker currently forces unlimited credits. A server sync is overridden back to ∞ by design.";
+    // This card describes the account signed in on THIS machine. Entitlements
+    // are server-side now, so anything set locally is overwritten by the next
+    // sync — Users (one account) and Plans (a whole tier) are where it sticks.
+    var note = el("div", "callout");
+    note.textContent = "Shows the account signed in on this machine. To change an allowance use the Users tab for one account, or Plans for a whole tier — those are stored on the server.";
     sc.appendChild(note);
     grid.appendChild(sc);
     panel.appendChild(grid);
@@ -513,6 +517,7 @@
       ec.appendChild(el("div", "callout", "Couldn't load users: " + usersState.error));
       panel.appendChild(ec); return;
     }
+    if (!plansState.data && !plansState.loading) loadPlans(); // needed for the plan dropdown
     if (!usersState.data) { loadUsers(panel); renderSkeleton(panel); return; }
 
     var d = usersState.data;
@@ -630,11 +635,25 @@
       if (u.subscription.status === o[0]) op.selected = true;
       sel.appendChild(op);
     });
-    var planIn = el("input"); planIn.type = "text"; planIn.placeholder = "plan (e.g. pro)";
-    planIn.value = u.subscription.plan || "";
+    // A dropdown of real plans, not free text: a typo like "Pro" matches no
+    // plan row and silently resolves back to free entitlements.
+    var planIn = el("select");
+    var noneOpt = el("option", null, "— no plan —"); noneOpt.value = ""; planIn.appendChild(noneOpt);
+    (plansState.data || []).forEach(function (pl) {
+      var op = el("option", null, pl.name + " (" + (pl.unlimited ? "unlimited" : pl.dailyQuota + "/day") + ")");
+      op.value = pl.id;
+      if (u.subscription.plan === pl.id) op.selected = true;
+      planIn.appendChild(op);
+    });
+    // A plan that was deleted after someone subscribed still has to be shown,
+    // or saving this form would quietly reassign them.
+    if (u.subscription.plan && !(plansState.data || []).some(function (pl) { return pl.id === u.subscription.plan; })) {
+      var orphan = el("option", null, u.subscription.plan + " (missing plan)");
+      orphan.value = u.subscription.plan; orphan.selected = true; planIn.appendChild(orphan);
+    }
     sr.appendChild(sel); sr.appendChild(planIn);
     sr.appendChild(btn("Apply", "sm", function () {
-      apply({ subscription: { status: sel.value, plan: planIn.value.trim() || null } });
+      apply({ subscription: { status: sel.value, plan: planIn.value || null } });
     }));
     d.appendChild(sr);
     d.appendChild(el("p", "sec-sub", "Setting this by hand marks the subscription as manually managed. A Razorpay webhook will overwrite it on the next billing event."));
@@ -649,6 +668,144 @@
     d.appendChild(ar);
     if (!u.disabled) d.appendChild(el("p", "sec-sub", "Disabling blocks sign-in everywhere — the website, the extension, and Google."));
     return d;
+  }
+
+  /* ---- Plans ----
+   * What each tier actually grants. Until now "pro" was a bare label on a
+   * subscription with nothing behind it, so changing someone's plan changed
+   * nothing they could do. A quota of -1 means unlimited. */
+  var plansState = { loading: false, data: null, error: null, editing: null };
+
+  function loadPlans() {
+    plansState.loading = true;
+    adminApi("/api/admin/plans")
+      .then(function (d) { plansState.data = d.plans; plansState.error = null; })
+      .catch(function (e) { plansState.error = e.message; })
+      .then(function () { plansState.loading = false; render(); });
+  }
+
+  function renderPlans(tab, panel) {
+    var ph = el("div", "panel-head"); ph.appendChild(el("h2", null, "Plans"));
+    ph.appendChild(el("p", null, "What each tier grants. The daily quota here is what the extension enforces — set it to -1 for unlimited. Live for every account on the plan."));
+    panel.appendChild(ph);
+
+    if (plansState.error) {
+      var ec = el("div", "card pad"); ec.appendChild(el("div", "callout", "Couldn't load plans: " + plansState.error));
+      panel.appendChild(ec); return;
+    }
+    if (!plansState.data) { if (!plansState.loading) loadPlans(); renderSkeleton(panel); return; }
+
+    plansState.data.forEach(function (p) { panel.appendChild(planCard(p)); });
+
+    // New plan
+    var nc = el("div", "card pad");
+    nc.appendChild(h3ic("subscription", "Add a plan"));
+    var f = planForm({ id: "", name: "", dailyQuota: 100, priceInr: 0, razorpayPlanId: "", active: true, sortOrder: (plansState.data.length || 0) }, true);
+    nc.appendChild(f.node);
+    var nr = el("div", "row"); nr.style.marginTop = "12px";
+    nr.appendChild(btn("Create plan", "sm", function () {
+      adminApi("/api/admin/plans", { method: "POST", body: f.read() })
+        .then(function () { toast("Plan created"); loadPlans(); })
+        .catch(function (e) { toast(planError(e)); });
+    }));
+    nc.appendChild(nr);
+    panel.appendChild(nc);
+  }
+
+  function planError(e) {
+    return ({
+      bad_id: "Use a short lowercase id — letters, numbers, dash or underscore.",
+      bad_quota: "Daily quota must be a whole number, or -1 for unlimited.",
+      bad_price: "Price must be a whole number of rupees.",
+      bad_name: "Give the plan a name.",
+      already_exists: "A plan with that id already exists.",
+      cannot_delete_free: "The free plan is the fallback for every unsubscribed account and can't be deleted.",
+      plan_in_use: e.message,
+    })[e.code] || ("Failed: " + e.message);
+  }
+
+  function planForm(p, isNew) {
+    var wrap = el("div");
+    function row(label, input, hint) {
+      var r = el("div", "field");
+      var l = el("div"); l.appendChild(el("div", "lab", label));
+      if (hint) l.appendChild(el("div", "help", hint));
+      var c = el("div", "ctl"); c.appendChild(input);
+      r.appendChild(l); r.appendChild(c); wrap.appendChild(r);
+      return input;
+    }
+    var idIn = el("input"); idIn.type = "text"; idIn.value = p.id; idIn.placeholder = "pro";
+    if (!isNew) { idIn.disabled = true; idIn.title = "A plan's id is referenced by existing subscriptions and can't be renamed."; }
+    row("Plan id", idIn, isNew ? "Lowercase, no spaces. Referenced by subscriptions, so it can't be changed later." : "Referenced by existing subscriptions.");
+
+    var nameIn = el("input"); nameIn.type = "text"; nameIn.value = p.name; nameIn.placeholder = "Pro";
+    row("Display name", nameIn);
+
+    var quotaIn = el("input"); quotaIn.type = "number"; quotaIn.value = String(p.dailyQuota);
+    row("Daily quota", quotaIn, "Images per day. -1 means unlimited.");
+
+    var priceIn = el("input"); priceIn.type = "number"; priceIn.value = String(p.priceInr);
+    row("Price (₹/month)", priceIn, "Display only — Razorpay holds the real amount.");
+
+    var rzpIn = el("input"); rzpIn.type = "text"; rzpIn.value = p.razorpayPlanId || ""; rzpIn.placeholder = "plan_XXXXXXXX";
+    row("Razorpay plan id", rzpIn, "From the Razorpay dashboard. Links a webhook event to this tier.");
+
+    var activeIn = el("input"); activeIn.type = "checkbox"; activeIn.checked = p.active !== false;
+    row("Offered to new customers", activeIn, "Turning this off hides the plan without affecting anyone already on it.");
+
+    return {
+      node: wrap,
+      read: function () {
+        return {
+          id: idIn.value.trim().toLowerCase(), name: nameIn.value.trim(),
+          dailyQuota: parseInt(quotaIn.value, 10), priceInr: parseInt(priceIn.value, 10),
+          razorpayPlanId: rzpIn.value.trim() || null, active: activeIn.checked,
+          sortOrder: p.sortOrder || 0,
+        };
+      },
+    };
+  }
+
+  function planCard(p) {
+    var c = el("div", "card pad");
+    var head = el("div", "row");
+    head.appendChild(h3ic("subscription", p.name));
+    var tags = el("div", "userrow-tags"); tags.style.marginLeft = "auto";
+    tags.appendChild(el("span", "utag utag-muted", p.id));
+    tags.appendChild(el("span", "utag " + (p.unlimited ? "utag-on" : "utag-muted"), p.unlimited ? "unlimited" : p.dailyQuota + "/day"));
+    tags.appendChild(el("span", "utag utag-muted", "₹" + p.priceInr));
+    if (!p.active) tags.appendChild(el("span", "utag utag-off", "hidden"));
+    tags.appendChild(el("span", "utag " + (p.activeSubscribers ? "utag-admin" : "utag-muted"),
+      p.activeSubscribers + (p.activeSubscribers === 1 ? " subscriber" : " subscribers")));
+    head.appendChild(tags);
+    c.appendChild(head);
+
+    var open = plansState.editing === p.id;
+    var r = el("div", "row"); r.style.marginTop = "10px";
+    r.appendChild(btn(open ? "Close" : "Edit", open ? "ghost sm" : "sm", function () {
+      plansState.editing = open ? null : p.id; render();
+    }));
+    if (p.id !== "free") {
+      r.appendChild(btn("Delete", "ghost sm", function () {
+        adminApi("/api/admin/plans/" + encodeURIComponent(p.id), { method: "DELETE" })
+          .then(function () { toast("Plan deleted"); loadPlans(); })
+          .catch(function (e) { toast(planError(e)); });
+      }));
+    }
+    c.appendChild(r);
+
+    if (open) {
+      var f = planForm(p, false);
+      c.appendChild(f.node);
+      var sr = el("div", "row"); sr.style.marginTop = "12px";
+      sr.appendChild(btn("Save changes", "sm", function () {
+        adminApi("/api/admin/plans/" + encodeURIComponent(p.id), { method: "PATCH", body: f.read() })
+          .then(function () { toast("Plan saved"); plansState.editing = null; loadPlans(); })
+          .catch(function (e) { toast(planError(e)); });
+      }));
+      c.appendChild(sr);
+    }
+    return c;
   }
 
   function renderMaskLocks(tab, panel) {
