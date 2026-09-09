@@ -104,6 +104,7 @@
 
   var SCHEMA = [
     { id: "dashboard", title: "Dashboard", icon: "📊", custom: renderDashboard },
+    { id: "users", title: "Users", icon: "👤", custom: renderUsers },
     { id: "detection", title: "Detection", icon: "🎯",
       desc: "How the sparkle is located. Lower nccAccept catches fainter marks; the scan finds it when it drifts off the auto position.",
       groups: [{ title: "Image detection · erasioToolImageSettings", fields: [
@@ -339,11 +340,30 @@
     var plan = cs.kind === "paid" ? "Pro" : cs.kind === "free" ? "Free" : cs.kind === "guest" ? "Guest" : (cs.kind || "—");
     var unlimited = (cs.limit === 0 || cs.remaining >= 999999);
 
-    // tiles
+    // Tiles. The first two describe THIS browser's extension; the rest are the
+    // whole service, fetched from the server — a panel whose headline numbers
+    // only ever describe one machine isn't mission control.
     var tiles = el("div", "tiles");
-    [["Processed", processed.toLocaleString()], ["Power", enabled ? "On" : "Off"], ["Plan", plan], ["Credits", unlimited ? "∞" : ((cs.remaining != null ? cs.remaining : "—") + "/" + (cs.limit != null ? cs.limit : "—"))]]
-      .forEach(function (t) { var d = el("div", "tile"); d.appendChild(el("div", "v", t[1])); d.appendChild(el("div", "l", t[0])); tiles.appendChild(d); });
+    function tile(label, value) {
+      var d = el("div", "tile"); d.appendChild(el("div", "v", value)); d.appendChild(el("div", "l", label));
+      tiles.appendChild(d); return d;
+    }
+    tile("Processed here", processed.toLocaleString());
+    tile("Power", enabled ? "On" : "Off");
+    var tUsers = tile("Users", "…"), tSubs = tile("Active plans", "…"), tCredits = tile("Credits used today", "…");
     panel.appendChild(tiles);
+
+    if (adminStats) applyStats(); else {
+      adminApi("/api/admin/stats")
+        .then(function (d) { adminStats = d; applyStats(); })
+        .catch(function () { [tUsers, tSubs, tCredits].forEach(function (t) { t.querySelector(".v").textContent = "—"; }); });
+    }
+    function applyStats() {
+      tUsers.querySelector(".v").textContent = String(adminStats.users.total);
+      tUsers.querySelector(".l").textContent = "Users · +" + adminStats.users.newToday + " today";
+      tSubs.querySelector(".v").textContent = String(adminStats.subscriptions.active);
+      tCredits.querySelector(".v").textContent = String(adminStats.credits.usedToday);
+    }
 
     var grid = el("div", "subgrid two"); grid.style.marginTop = "16px";
 
@@ -430,6 +450,205 @@
     syr.appendChild(btn("Restore", "ghost sm", pullNow));
     syc.appendChild(syr);
     panel.appendChild(syc);
+  }
+
+  /* ---- Users ----
+   * Reads the backend's real users table, so everyone who signed up counts —
+   * password or Google. This is deliberately server-only data: the extension's
+   * own chrome.storage knows about exactly one account (whoever is signed in on
+   * this machine), which is why the Dashboard's User control card can only ever
+   * say "Guest". */
+  var usersState = { q: "", offset: 0, limit: 25, loading: false, data: null, error: null, openId: null };
+  var adminStats = null; // cached so flipping between tabs doesn't refetch each render
+
+  function adminApi(path, opts) {
+    opts = opts || {};
+    opts.credentials = "include";
+    opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    if (opts.body && typeof opts.body !== "string") opts.body = JSON.stringify(opts.body);
+    var base = (location.protocol === "http:" || location.protocol === "https:") ? "" : "https://erasezo.com";
+    return fetch(base + path, opts).then(function (r) {
+      return r.text().then(function (t) {
+        var b = null; try { b = t ? JSON.parse(t) : null; } catch (e) {}
+        if (!r.ok) { var e2 = new Error((b && (b.message || b.error)) || ("HTTP " + r.status)); e2.code = b && b.error; throw e2; }
+        return b;
+      });
+    });
+  }
+
+  function fmtDate(s) { if (!s) return "—"; try { return new Date(s).toLocaleDateString(); } catch (e) { return "—"; } }
+
+  function loadUsers(panel) {
+    usersState.loading = true;
+    adminApi("/api/admin/users?limit=" + usersState.limit + "&offset=" + usersState.offset +
+             (usersState.q ? "&q=" + encodeURIComponent(usersState.q) : ""))
+      .then(function (d) { usersState.data = d; usersState.error = null; })
+      .catch(function (e) { usersState.error = e.message; usersState.data = null; })
+      .then(function () { usersState.loading = false; render(); });
+  }
+
+  function renderUsers(tab, panel) {
+    var ph = el("div", "panel-head"); ph.appendChild(el("h2", null, "Users"));
+    ph.appendChild(el("p", null, "Everyone registered on erasezo.com — password and Google sign-ups alike — with their credits and subscription."));
+    panel.appendChild(ph);
+
+    // Search
+    var sc = el("div", "card pad");
+    var srow = el("div", "row");
+    var search = el("input"); search.type = "text";
+    search.placeholder = "Search by email or username"; search.value = usersState.q;
+    search.style.minWidth = "280px";
+    search.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { usersState.q = search.value.trim(); usersState.offset = 0; loadUsers(panel); }
+    });
+    srow.appendChild(search);
+    srow.appendChild(btn("Search", "sm", function () { usersState.q = search.value.trim(); usersState.offset = 0; loadUsers(panel); }));
+    if (usersState.q) srow.appendChild(btn("Clear", "ghost sm", function () { usersState.q = ""; usersState.offset = 0; loadUsers(panel); }));
+    sc.appendChild(srow);
+    panel.appendChild(sc);
+
+    if (usersState.loading && !usersState.data) { renderSkeleton(panel); return; }
+    if (usersState.error) {
+      var ec = el("div", "card pad");
+      ec.appendChild(el("div", "callout", "Couldn't load users: " + usersState.error));
+      panel.appendChild(ec); return;
+    }
+    if (!usersState.data) { loadUsers(panel); renderSkeleton(panel); return; }
+
+    var d = usersState.data;
+    var lc = el("div", "card pad");
+    lc.appendChild(h3ic("user", d.total + (d.total === 1 ? " account" : " accounts")));
+    if (!d.users.length) {
+      lc.appendChild(el("div", "callout", usersState.q ? "No account matches that search." : "No one has signed up yet."));
+      panel.appendChild(lc); return;
+    }
+
+    d.users.forEach(function (u) { lc.appendChild(userRow(u, panel)); });
+
+    // Paging
+    if (d.total > d.limit) {
+      var pr = el("div", "row"); pr.style.marginTop = "14px";
+      if (d.offset > 0) pr.appendChild(btn("← Previous", "ghost sm", function () {
+        usersState.offset = Math.max(0, d.offset - d.limit); loadUsers(panel);
+      }));
+      if (d.offset + d.limit < d.total) pr.appendChild(btn("Next →", "ghost sm", function () {
+        usersState.offset = d.offset + d.limit; loadUsers(panel);
+      }));
+      pr.appendChild(el("span", "sec-sub", "Showing " + (d.offset + 1) + "–" + Math.min(d.offset + d.limit, d.total) + " of " + d.total));
+      lc.appendChild(pr);
+    }
+    panel.appendChild(lc);
+  }
+
+  function userRow(u, panel) {
+    var wrap = el("div", "userrow");
+    var head = el("button", "userrow-head");
+    head.addEventListener("click", function () {
+      usersState.openId = usersState.openId === u.userId ? null : u.userId; render();
+    });
+
+    var who = el("div", "userrow-who");
+    var name = el("b", null, u.email);
+    who.appendChild(name);
+    var meta = el("span", "userrow-meta");
+    meta.textContent = (u.authProvider === "google" ? "Google" : "Password") + " · joined " + fmtDate(u.createdAt);
+    who.appendChild(meta);
+    head.appendChild(who);
+
+    var tags = el("div", "userrow-tags");
+    if (u.isAdmin) tags.appendChild(el("span", "utag utag-admin", "admin"));
+    if (u.disabled) tags.appendChild(el("span", "utag utag-off", "disabled"));
+    tags.appendChild(el("span", "utag utag-" + (u.subscription.status === "active" ? "on" : "muted"),
+      u.subscription.status === "active" ? (u.subscription.plan || "pro") : u.subscription.status));
+    tags.appendChild(el("span", "utag utag-muted", u.credits.balance + " cr"));
+    head.appendChild(tags);
+    wrap.appendChild(head);
+
+    if (usersState.openId === u.userId) wrap.appendChild(userDetail(u, panel));
+    return wrap;
+  }
+
+  function userDetail(u, panel) {
+    var d = el("div", "userrow-body");
+    var kv = el("div");
+    kvRow(kv, "User ID", String(u.userId));
+    kvRow(kv, "Username", u.username || "—");
+    kvRow(kv, "Sign-in method", u.authProvider === "google" ? "Google" : "Email + password");
+    kvRow(kv, "Credit balance", String(u.credits.balance));
+    kvRow(kv, "Used today", String(u.credits.usedToday));
+    kvRow(kv, "Used all time", String(u.credits.usedTotal));
+    kvRow(kv, "Daily quota", u.credits.dailyQuota + (u.credits.quotaIsOverride ? " (override)" : " (default)"));
+    kvRow(kv, "Subscription", u.subscription.status + (u.subscription.plan ? " · " + u.subscription.plan : ""));
+    if (u.subscription.provider) kvRow(kv, "Billing via", u.subscription.provider);
+    if (u.subscription.currentPeriodEnd) kvRow(kv, "Renews / ends", fmtDate(u.subscription.currentPeriodEnd));
+    d.appendChild(kv);
+
+    function apply(p) {
+      adminApi("/api/admin/users/" + u.userId, { method: "PATCH", body: p })
+        .then(function () { toast("Saved"); loadUsers(panel); })
+        .catch(function (e) {
+          toast(e.code === "cannot_lock_self_out" ? "You can't disable or demote your own admin account" : "Failed: " + e.message);
+        });
+    }
+
+    // Credits
+    d.appendChild(el("div", "group-title", "Credits"));
+    var cr = el("div", "row");
+    var amt = el("input"); amt.type = "number"; amt.value = "50";
+    cr.appendChild(amt);
+    cr.appendChild(btn("Add", "sm", function () {
+      var n = parseInt(amt.value, 10);
+      if (!n) { toast("Enter a non-zero amount"); return; }
+      adminApi("/api/admin/users/" + u.userId + "/credits", { method: "POST", body: { delta: Math.abs(n), reason: "admin_grant" } })
+        .then(function () { toast("Credits added"); loadUsers(panel); })
+        .catch(function (e) { toast("Failed: " + e.message); });
+    }));
+    cr.appendChild(btn("Deduct", "ghost sm", function () {
+      var n = parseInt(amt.value, 10);
+      if (!n) { toast("Enter a non-zero amount"); return; }
+      adminApi("/api/admin/users/" + u.userId + "/credits", { method: "POST", body: { delta: -Math.abs(n), reason: "admin_deduct" } })
+        .then(function () { toast("Credits deducted"); loadUsers(panel); })
+        .catch(function (e) { toast("Failed: " + e.message); });
+    }));
+    d.appendChild(cr);
+
+    // Daily quota
+    var qr = el("div", "row");
+    var quota = el("input"); quota.type = "number"; quota.value = String(u.credits.dailyQuota);
+    qr.appendChild(el("span", "sec-sub", "Daily quota"));
+    qr.appendChild(quota);
+    qr.appendChild(btn("Set", "sm", function () { apply({ dailyQuota: parseInt(quota.value, 10) }); }));
+    if (u.credits.quotaIsOverride) qr.appendChild(btn("Use default", "ghost sm", function () { apply({ dailyQuota: null }); }));
+    d.appendChild(qr);
+
+    // Subscription
+    d.appendChild(el("div", "group-title", "Subscription"));
+    var sr = el("div", "row");
+    var sel = el("select");
+    [["none", "None"], ["active", "Active"], ["past_due", "Past due"], ["cancelled", "Cancelled"]].forEach(function (o) {
+      var op = el("option", null, o[1]); op.value = o[0];
+      if (u.subscription.status === o[0]) op.selected = true;
+      sel.appendChild(op);
+    });
+    var planIn = el("input"); planIn.type = "text"; planIn.placeholder = "plan (e.g. pro)";
+    planIn.value = u.subscription.plan || "";
+    sr.appendChild(sel); sr.appendChild(planIn);
+    sr.appendChild(btn("Apply", "sm", function () {
+      apply({ subscription: { status: sel.value, plan: planIn.value.trim() || null } });
+    }));
+    d.appendChild(sr);
+    d.appendChild(el("p", "sec-sub", "Setting this by hand marks the subscription as manually managed. A Razorpay webhook will overwrite it on the next billing event."));
+
+    // Access
+    d.appendChild(el("div", "group-title", "Access"));
+    var ar = el("div", "row");
+    ar.appendChild(btn(u.disabled ? "Re-enable account" : "Disable account", u.disabled ? "sm" : "ghost sm", function () {
+      apply({ disabled: !u.disabled });
+    }));
+    ar.appendChild(btn(u.isAdmin ? "Revoke admin" : "Make admin", "ghost sm", function () { apply({ isAdmin: !u.isAdmin }); }));
+    d.appendChild(ar);
+    if (!u.disabled) d.appendChild(el("p", "sec-sub", "Disabling blocks sign-in everywhere — the website, the extension, and Google."));
+    return d;
   }
 
   function renderMaskLocks(tab, panel) {

@@ -8,6 +8,7 @@ const express = require("express");
 const cookieParser = require("cookie-parser");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const path = require("path");
 const db = require("./db");
 const totp = require("./totp");
@@ -29,7 +30,10 @@ const app = express();
 // so without this, req.ip is the edge's address for every request — the rate
 // limiter below would bucket all users together instead of by real client IP.
 app.set("trust proxy", 1);
-app.use(express.json({ limit: "64kb" })); // auth payloads are tiny; caps request-body DoS
+// verify: keeps the exact bytes around. Razorpay signs the raw payload, so the
+// HMAC must be taken over what was actually sent — re-serialising the parsed
+// object would reorder keys and never match. limit caps request-body DoS.
+app.use(express.json({ limit: "64kb", verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
 /* ---------- security headers ---------- */
@@ -105,8 +109,8 @@ async function adminAuth(req, res, next) {
   if (payload.adm !== true) return res.status(403).json({ error: "not_admin" });
   // Re-read the flag every request: revoking admin in the database must take
   // effect immediately, not whenever an issued token happens to expire.
-  const u = (await db.query("select is_admin from users where id=$1", [payload.uid])).rows[0];
-  if (!u || !u.is_admin) return res.status(403).json({ error: "not_admin" });
+  const u = (await db.query("select is_admin, disabled from users where id=$1", [payload.uid])).rows[0];
+  if (!u || !u.is_admin || u.disabled) return res.status(403).json({ error: "not_admin" });
   req.userId = payload.uid;
   next();
 }
@@ -120,7 +124,7 @@ const utcMidnight = () => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); ret
 
 async function userPublic(id) {
   const u = (await db.query(
-    "select id, email, username, avatar_url, auth_provider, google_id, referral_code from users where id=$1", [id]
+    "select id, email, username, avatar_url, auth_provider, google_id, referral_code, daily_quota, disabled from users where id=$1", [id]
   )).rows[0];
   if (!u) return null;
   const total = Number((await db.query("select coalesce(sum(delta),0) s from credit_ledger where user_id=$1", [id])).rows[0].s);
@@ -134,7 +138,8 @@ async function userPublic(id) {
     referralCode: u.referral_code,
     plan: (sub && sub.status === "active") ? (sub.plan || "pro") : "free",
     subscriptionStatus: (sub && sub.status) || "none",
-    credits: { total, today, dailyQuota: DAILY_FREE },
+    disabled: !!u.disabled,
+    credits: { total, today, dailyQuota: u.daily_quota == null ? DAILY_FREE : u.daily_quota },
   };
 }
 
@@ -144,8 +149,19 @@ async function grantDailyIfNeeded(uid) {
     "select 1 from credit_ledger where user_id=$1 and reason='daily_free' and created_at >= $2 limit 1",
     [uid, utcMidnight()]
   )).rows[0];
-  if (!has) await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,$2,'daily_free')", [uid, DAILY_FREE]);
+  if (has) return;
+  // A per-user override beats the global default; NULL means "just use the
+  // default", so raising DAILY_FREE still lifts everyone who has no override.
+  const u = (await db.query("select daily_quota from users where id=$1", [uid])).rows[0];
+  const amount = u && u.daily_quota != null ? u.daily_quota : DAILY_FREE;
+  if (amount <= 0) return;
+  await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,$2,'daily_free')", [uid, amount]);
 }
+
+/* A disabled account must be turned away at every door, not just the one the
+ * ticket mentioned — password login, the extension's own login, and the Google
+ * callback all funnel through here. */
+const DISABLED_BODY = { error: "account_disabled", message: "This account has been disabled." };
 
 /* ---------- auth: email + password ---------- */
 app.post("/api/auth/register", authLimiter, async (req, res) => {
@@ -165,20 +181,21 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
     await grantDailyIfNeeded(u.id);
     setAuthCookie(res, u.id);
     res.json({ ok: true, user: await userPublic(u.id) });
-  } catch (e) { res.status(500).json({ error: "server_error", message: e.message }); }
+  } catch (e) { console.error("[auth]", e && e.message); res.status(500).json({ error: "server_error" }); }
 });
 
 app.post("/api/auth/login", authLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
-    const u = (await db.query("select id, password_hash, auth_provider from users where email=$1", [email])).rows[0];
+    const u = (await db.query("select id, password_hash, auth_provider, disabled from users where email=$1", [email])).rows[0];
     if (!u || !u.password_hash) return res.status(401).json({ error: "invalid_credentials" });
     if (!(await bcrypt.compare(password, u.password_hash))) return res.status(401).json({ error: "invalid_credentials" });
+    if (u.disabled) return res.status(403).json(DISABLED_BODY);
     await grantDailyIfNeeded(u.id);
     setAuthCookie(res, u.id);
     res.json({ ok: true, user: await userPublic(u.id) });
-  } catch (e) { res.status(500).json({ error: "server_error", message: e.message }); }
+  } catch (e) { console.error("[auth]", e && e.message); res.status(500).json({ error: "server_error" }); }
 });
 
 app.post("/api/auth/logout", (req, res) => { clearAuthCookie(res); res.json({ ok: true }); });
@@ -278,9 +295,10 @@ app.post("/api/ext/login", extCors, authLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
     const password = String(req.body.password || "");
-    const u = (await db.query("select id, password_hash, auth_provider from users where email=$1", [email])).rows[0];
+    const u = (await db.query("select id, password_hash, auth_provider, disabled from users where email=$1", [email])).rows[0];
     if (!u || !u.password_hash) return res.status(401).json({ message: "invalid_credentials" });
     if (!(await bcrypt.compare(password, u.password_hash))) return res.status(401).json({ message: "invalid_credentials" });
+    if (u.disabled) return res.status(403).json(DISABLED_BODY);
     await grantDailyIfNeeded(u.id);
     setAuthCookie(res, u.id); // also signs the browser in on erasezo.com, if a tab visits it later
     res.json(extSessionPayload(u.id, await userPublic(u.id)));
@@ -317,13 +335,14 @@ app.post("/api/admin/login", adminLoginLimiter, async (req, res) => {
     const password = String(req.body.password || "");
     const code = String(req.body.code || "");
     const u = (await db.query(
-      "select id, password_hash, is_admin, totp_enabled, totp_secret from users where email=$1", [email]
+      "select id, password_hash, is_admin, disabled, totp_enabled, totp_secret from users where email=$1", [email]
     )).rows[0];
 
     // Same reply for "no such user", "wrong password" and "not an admin", so
     // this endpoint can't be used to discover which accounts are admins.
     const ok = u && u.password_hash && await bcrypt.compare(password, u.password_hash);
     if (!ok || !u.is_admin) return res.status(401).json({ error: "invalid_credentials" });
+    if (u.disabled) return res.status(403).json(DISABLED_BODY);
 
     if (u.totp_enabled) {
       if (!code) return res.status(401).json({ error: "totp_required" });
@@ -357,6 +376,167 @@ app.put("/api/admin/settings", adminAuth, async (req, res) => {
     [req.userId, JSON.stringify(settings)]
   );
   res.json({ ok: true });
+});
+
+/* ---------- Control Room: the people using the extension ----------
+ * The panel could previously only see this browser's own extension storage, so
+ * registered users — everyone who signed up through Google included — were
+ * invisible to it. These read the real users table. */
+
+// Assembled in one statement rather than a query per user: with a row per
+// account that would be a textbook N+1, and the credit figures are aggregates
+// over the whole ledger anyway. The ledger is folded down in derived tables
+// rather than correlated per-row subqueries — one pass over credit_ledger
+// instead of four per user.
+const USER_SELECT = `
+  select u.id, u.email, u.username, u.avatar_url, u.auth_provider, u.google_id,
+         u.is_admin, u.disabled, u.daily_quota, u.created_at,
+         coalesce(s.status,'none') sub_status, s.plan sub_plan, s.provider sub_provider,
+         s.current_period_end, s.provider_subscription_id,
+         coalesce(cl.balance,0)::int balance,
+         coalesce(cl.used_total,0)::int used_total,
+         coalesce(td.used_today,0)::int used_today,
+         coalesce(td.granted_today,0)::int granted_today
+  from users u
+  left join subscriptions s on s.user_id = u.id
+  left join (
+    select user_id,
+           sum(delta) balance,
+           sum(case when delta < 0 then -delta else 0 end) used_total
+    from credit_ledger group by user_id
+  ) cl on cl.user_id = u.id
+  left join (
+    select user_id,
+           sum(case when delta < 0 then -delta else 0 end) used_today,
+           sum(case when delta > 0 then delta else 0 end) granted_today
+    from credit_ledger where created_at >= $1 group by user_id
+  ) td on td.user_id = u.id`;
+
+function shapeUser(r) {
+  return {
+    userId: r.id, email: r.email, username: r.username || r.email.split("@")[0],
+    avatarUrl: r.avatar_url,
+    authProvider: r.google_id ? "google" : r.auth_provider,
+    isAdmin: r.is_admin, disabled: r.disabled, createdAt: r.created_at,
+    credits: {
+      balance: r.balance, usedToday: r.used_today, usedTotal: r.used_total,
+      grantedToday: r.granted_today,
+      dailyQuota: r.daily_quota == null ? DAILY_FREE : r.daily_quota,
+      quotaIsOverride: r.daily_quota != null,
+    },
+    subscription: {
+      status: r.sub_status, plan: r.sub_plan, provider: r.sub_provider,
+      currentPeriodEnd: r.current_period_end, providerSubscriptionId: r.provider_subscription_id,
+    },
+  };
+}
+
+app.get("/api/admin/users", adminAuth, async (req, res) => {
+  // Cap the page size: an unbounded limit from the query string is a cheap way
+  // to make the server assemble the entire table on demand.
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  const q = String(req.query.q || "").trim().toLowerCase();
+  const params = [utcMidnight()];
+  let where = "";
+  if (q) {
+    // Parameterised, and the wildcards are added here rather than taken from
+    // the caller, so a value like "%" can't become a match-everything scan.
+    params.push("%" + q + "%");
+    where = ` where lower(u.email) like $${params.length} or lower(coalesce(u.username,'')) like $${params.length}`;
+  }
+  params.push(limit, offset);
+  const rows = (await db.query(
+    `${USER_SELECT}${where} order by u.created_at desc limit $${params.length - 1} offset $${params.length}`, params
+  )).rows;
+  const total = (await db.query(
+    `select count(*)::int c from users u${q ? " where lower(u.email) like $1 or lower(coalesce(u.username,'')) like $1" : ""}`,
+    q ? ["%" + q + "%"] : []
+  )).rows[0].c;
+  res.json({ users: rows.map(shapeUser), total, limit, offset });
+});
+
+app.get("/api/admin/users/:id", adminAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
+  const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
+  if (!r) return res.status(404).json({ error: "not_found" });
+  const ledger = (await db.query(
+    "select delta, reason, created_at from credit_ledger where user_id=$1 order by created_at desc limit 25", [id]
+  )).rows;
+  res.json(Object.assign(shapeUser(r), { ledger }));
+});
+
+app.patch("/api/admin/users/:id", adminAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
+  const b = req.body || {};
+
+  // Locking yourself out of the only admin account can't be undone from the
+  // panel, so the two settings that could do it are refused on your own row.
+  if (id === req.userId && (b.disabled === true || b.isAdmin === false)) {
+    return res.status(400).json({ error: "cannot_lock_self_out" });
+  }
+  if (typeof b.disabled === "boolean") await db.query("update users set disabled=$1 where id=$2", [b.disabled, id]);
+  if (typeof b.isAdmin === "boolean") await db.query("update users set is_admin=$1 where id=$2", [b.isAdmin, id]);
+  if ("dailyQuota" in b) {
+    const q = b.dailyQuota === null ? null : parseInt(b.dailyQuota, 10);
+    if (q !== null && (!Number.isInteger(q) || q < 0 || q > 100000)) return res.status(400).json({ error: "bad_quota" });
+    await db.query("update users set daily_quota=$1 where id=$2", [q, id]);
+  }
+  if (b.subscription) {
+    const status = String(b.subscription.status || "none");
+    if (["none", "active", "cancelled", "past_due"].indexOf(status) === -1) return res.status(400).json({ error: "bad_status" });
+    const plan = b.subscription.plan ? String(b.subscription.plan).slice(0, 40) : null;
+    await db.query(
+      `insert into subscriptions (user_id, status, plan, provider, updated_at) values ($1,$2,$3,'manual',now())
+       on conflict (user_id) do update set status=$2, plan=$3, provider='manual', updated_at=now()`,
+      [id, status, plan]
+    );
+  }
+  const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
+  if (!r) return res.status(404).json({ error: "not_found" });
+  res.json(shapeUser(r));
+});
+
+// Credits move only by appending to the ledger — never by overwriting a balance
+// — so every adjustment stays attributable after the fact.
+app.post("/api/admin/users/:id/credits", adminAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const delta = parseInt(req.body && req.body.delta, 10);
+  if (!Number.isInteger(id) || !Number.isInteger(delta) || delta === 0) return res.status(400).json({ error: "bad_request" });
+  if (Math.abs(delta) > 1000000) return res.status(400).json({ error: "delta_too_large" });
+  if (!(await db.query("select 1 from users where id=$1", [id])).rows[0]) return res.status(404).json({ error: "not_found" });
+  const reason = String((req.body && req.body.reason) || "admin_adjust").slice(0, 60);
+  await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,$2,$3)", [id, delta, reason]);
+  const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
+  res.json(shapeUser(r));
+});
+
+app.get("/api/admin/stats", adminAuth, async (req, res) => {
+  const midnight = utcMidnight();
+  const week = new Date(Date.now() - 7 * 864e5).toISOString();
+  const one = async (sql, params) => (await db.query(sql, params)).rows[0].c;
+  res.json({
+    users: {
+      total: await one("select count(*)::int c from users"),
+      newToday: await one("select count(*)::int c from users where created_at >= $1", [midnight]),
+      newThisWeek: await one("select count(*)::int c from users where created_at >= $1", [week]),
+      google: await one("select count(*)::int c from users where google_id is not null"),
+      disabled: await one("select count(*)::int c from users where disabled"),
+    },
+    subscriptions: {
+      active: await one("select count(*)::int c from subscriptions where status='active'"),
+      cancelled: await one("select count(*)::int c from subscriptions where status='cancelled'"),
+      pastDue: await one("select count(*)::int c from subscriptions where status='past_due'"),
+    },
+    credits: {
+      usedToday: await one("select coalesce(-sum(delta),0)::int c from credit_ledger where delta<0 and created_at >= $1", [midnight]),
+      usedThisWeek: await one("select coalesce(-sum(delta),0)::int c from credit_ledger where delta<0 and created_at >= $1", [week]),
+      outstanding: await one("select coalesce(sum(delta),0)::int c from credit_ledger"),
+    },
+    defaults: { dailyFree: DAILY_FREE },
+  });
 });
 
 /* 2FA. Enrolment stores the secret but leaves it disabled until a code proves
@@ -395,9 +575,11 @@ app.post("/api/admin/2fa/disable", adminAuth, admin2faLimiter, async (req, res) 
 // password account), link googleId to that row — never create a duplicate.
 async function mergeOrCreateGoogleUser(info) {
   const email = String(info.email || "").toLowerCase();
-  const existing = (await db.query("select id, google_id from users where email=$1", [email])).rows[0];
+  const existing = (await db.query("select id, google_id, disabled from users where email=$1", [email])).rows[0];
   let uid;
   if (existing) {
+    // Signing in with Google must not be a way around a disabled account.
+    if (existing.disabled) { const e = new Error("account_disabled"); e.disabled = true; throw e; }
     if (!existing.google_id) await db.query("update users set google_id=$1 where id=$2", [info.sub, existing.id]);
     uid = existing.id;
   } else {
@@ -442,7 +624,87 @@ app.get("/api/auth/google/callback", async (req, res) => {
     const uid = await mergeOrCreateGoogleUser(info);
     setAuthCookie(res, uid);
     res.redirect("/dashboard");
-  } catch (e) { res.status(500).send("OAuth error: " + e.message); }
+  } catch (e) {
+    if (e && e.disabled) return res.status(403).send("This account has been disabled.");
+    // Deliberately not echoing e.message: reflecting an error string into an
+    // HTML response is how a stray bit of attacker-influenced text becomes XSS.
+    console.error("[oauth] callback failed:", e && e.message);
+    res.status(500).send("Sign-in failed. Please try again.");
+  }
+});
+
+/* ---------- Razorpay webhook ----------
+ * The only way a subscription becomes active without an admin doing it by hand.
+ * Razorpay signs each delivery with the webhook secret; an unsigned or
+ * mis-signed request is discarded before anything is read out of its body,
+ * because this endpoint is public and its body would otherwise amount to an
+ * attacker-supplied instruction to grant a paid plan.
+ *
+ * NOT yet exercised against live Razorpay — the account's keys aren't set up,
+ * so the signature and mapping paths are covered by tests only. Send a test
+ * event from the Razorpay dashboard before trusting this with real money. */
+function razorpaySignatureValid(req) {
+  const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
+  if (!secret || !req.rawBody) return false;
+  const sent = Buffer.from(String(req.get("x-razorpay-signature") || ""));
+  const exp = Buffer.from(crypto.createHmac("sha256", secret).update(req.rawBody).digest("hex"));
+  // Length is compared first because timingSafeEqual throws, rather than
+  // returning false, when the two buffers differ in size.
+  return exp.length === sent.length && crypto.timingSafeEqual(exp, sent);
+}
+
+// Maps a Razorpay subscription state onto the three this app acts on. Anything
+// unlisted is acknowledged but changes nothing — guessing at an unknown state
+// is how a lapsed subscription silently keeps its paid features.
+const RZP_STATUS = {
+  "subscription.activated": "active", "subscription.charged": "active",
+  "subscription.resumed": "active", "subscription.authenticated": "active",
+  "subscription.halted": "past_due", "subscription.pending": "past_due",
+  "subscription.cancelled": "cancelled", "subscription.completed": "cancelled",
+  "subscription.paused": "cancelled",
+};
+
+app.post("/api/webhooks/razorpay", async (req, res) => {
+  if (!razorpaySignatureValid(req)) return res.status(401).json({ error: "bad_signature" });
+  const body = req.body || {};
+  const event = String(body.event || "");
+
+  // Razorpay retries deliveries, so the same "charged" event can arrive more
+  // than once; recording the id makes a replay a no-op rather than a re-grant.
+  const eventId = String(req.get("x-razorpay-event-id") || "");
+  if (eventId) {
+    if ((await db.query("select 1 from webhook_events where id=$1", [eventId])).rows[0]) {
+      return res.json({ ok: true, duplicate: true });
+    }
+    await db.query("insert into webhook_events(id, provider, event) values ($1,'razorpay',$2)", [eventId, event]);
+  }
+
+  const status = RZP_STATUS[event];
+  if (!status) return res.json({ ok: true, ignored: event });
+
+  const sub = ((body.payload || {}).subscription || {}).entity || {};
+  const notes = sub.notes || {};
+  // The account is identified by what we put in `notes` when the subscription
+  // is created; email is the fallback for one created by hand in the dashboard.
+  let uid = parseInt(notes.user_id, 10);
+  if (!Number.isInteger(uid) && notes.email) {
+    const r = (await db.query("select id from users where email=$1", [String(notes.email).toLowerCase()])).rows[0];
+    uid = r && r.id;
+  }
+  if (!Number.isInteger(uid)) {
+    console.warn("[razorpay] no matching user for", event, "subscription", sub.id);
+    return res.json({ ok: true, unmatched: true });
+  }
+
+  const periodEnd = sub.current_end ? new Date(sub.current_end * 1000).toISOString() : null;
+  await db.query(
+    `insert into subscriptions (user_id, provider_subscription_id, status, plan, provider, current_period_end, updated_at)
+     values ($1,$2,$3,$4,'razorpay',$5,now())
+     on conflict (user_id) do update set provider_subscription_id=$2, status=$3, plan=$4,
+       provider='razorpay', current_period_end=$5, updated_at=now()`,
+    [uid, sub.id || null, status, notes.plan || sub.plan_id || null, periodEnd]
+  );
+  res.json({ ok: true });
 });
 
 /* ---------- static pages ---------- */
@@ -460,6 +722,23 @@ app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", 
 // root-absolute, which resolves identically here and at the extension root —
 // same file, no build step, no trailing-slash edge case.
 app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
+/* The extension's sidepanel links out to these paths. They used to point at
+ * erasio.io — a third party — so every one of them sent our own users to
+ * someone else's site. They point here now, and these redirects make sure that
+ * lands somewhere real instead of a 404. Replace with actual pages as they
+ * get written. */
+const LINK_REDIRECTS = {
+  "/register": "/", "/signup": "/", "/forgot-password": "/",
+  "/subscribe": "/dashboard", "/dashboard/settings": "/dashboard",
+  "/tool": "/dashboard", "/guide": "/dashboard", "/contact": "/dashboard",
+  "/privacy": "/dashboard",
+  "/image-watermark-removal-settings-guide": "/dashboard",
+  "/video-watermark-removal-settings-guide": "/dashboard",
+};
+Object.keys(LINK_REDIRECTS).forEach((from) => {
+  app.get(from, (req, res) => res.redirect(302, LINK_REDIRECTS[from]));
+});
+
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 
 /* ---------- daily free-quota reset (real scheduled job, in-process) ---------- */
