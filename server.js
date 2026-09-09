@@ -128,22 +128,34 @@ const utcMidnight = () => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); ret
 
 async function userPublic(id) {
   const u = (await db.query(
-    "select id, email, username, avatar_url, auth_provider, google_id, referral_code, daily_quota, disabled from users where id=$1", [id]
+    "select id, email, username, avatar_url, auth_provider, google_id, referral_code, daily_quota, disabled, credit_balance, is_admin from users where id=$1", [id]
   )).rows[0];
   if (!u) return null;
   const total = Number((await db.query("select coalesce(sum(delta),0) s from credit_ledger where user_id=$1", [id])).rows[0].s);
   const today = Number((await db.query(
     "select coalesce(sum(delta),0) s from credit_ledger where user_id=$1 and created_at >= $2", [id, utcMidnight()]
   )).rows[0].s);
-  const sub = (await db.query("select status, plan from subscriptions where user_id=$1", [id])).rows[0];
+  const sub = (await db.query("select status, plan, current_period_end from subscriptions where user_id=$1", [id])).rows[0];
+  // Same resolver the extension is metered by, so a user is never shown an
+  // allowance different from the one they actually have.
+  const ent = await entitlement(id);
   return {
     userId: u.id, email: u.email, username: u.username || u.email.split("@")[0],
     avatarUrl: u.avatar_url, authProvider: u.auth_provider, googleId: u.google_id,
     referralCode: u.referral_code,
-    plan: (sub && sub.status === "active") ? (sub.plan || "pro") : "free",
+    plan: ent.planId, planName: ent.planName,
     subscriptionStatus: (sub && sub.status) || "none",
+    currentPeriodEnd: (sub && sub.current_period_end) || null,
     disabled: !!u.disabled,
-    credits: { total, today, dailyQuota: u.daily_quota == null ? DAILY_FREE : u.daily_quota },
+    // Their own flag, so the dashboard can decide whether a Control Room link
+    // is worth showing without probing an admin endpoint that 401s for almost
+    // everyone. It gates a link, never access — the panel is server-gated.
+    isAdmin: !!u.is_admin,
+    credits: {
+      total, today,
+      balance: Number(u.credit_balance || 0),
+      dailyQuota: ent.quota, unlimited: ent.unlimited, quotaSource: ent.source,
+    },
   };
 }
 
@@ -423,6 +435,47 @@ app.post("/api/ext/refresh", extCors, authLimiter, async (req, res) => {
     if (!me) return res.status(401).json({ message: "invalid_token" });
     res.json(extSessionPayload(decoded.uid, me));
   } catch (e) { res.status(401).json({ message: "invalid_token" }); }
+});
+
+/* ---------- what the signed-in user's own dashboard needs ---------- */
+
+// The tiers on offer. Public because the upgrade view has to render before
+// anyone subscribes; razorpay_plan_id is deliberately not included — that is
+// operational detail, not something a visitor needs.
+app.get("/api/plans", async (req, res) => {
+  const rows = (await db.query(
+    "select id, name, daily_quota, price_inr from plans where active = true order by sort_order, id"
+  )).rows;
+  res.json({
+    plans: rows.map((p) => ({
+      id: p.id, name: p.name, dailyQuota: p.daily_quota,
+      unlimited: p.daily_quota < 0, priceInr: p.price_inr,
+    })),
+  });
+});
+
+// A user's own credit history. Scoped to req.userId, never to an id from the
+// query string — this is the ledger, and it is nobody else's business.
+app.get("/api/usage", auth, async (req, res) => {
+  const since = new Date(Date.now() - 29 * 864e5).toISOString();
+  const rows = (await db.query(
+    "select delta, reason, created_at from credit_ledger where user_id=$1 and created_at >= $2 order by created_at desc limit 300",
+    [req.userId, since]
+  )).rows;
+  // Rolled up in JS rather than with date_trunc: a month of one account's rows
+  // is tiny, and this doesn't depend on date functions behaving identically
+  // across Postgres and the in-memory engine the tests run on.
+  const days = new Map();
+  for (const r of rows) {
+    const key = new Date(r.created_at).toISOString().slice(0, 10);
+    const e = days.get(key) || { date: key, used: 0, granted: 0 };
+    if (r.delta < 0) e.used += -r.delta; else e.granted += r.delta;
+    days.set(key, e);
+  }
+  res.json({
+    recent: rows.slice(0, 25),
+    daily: Array.from(days.values()).sort((a, b) => (a.date < b.date ? -1 : 1)),
+  });
 });
 
 /* ---------- Control Room (super admin) ----------
