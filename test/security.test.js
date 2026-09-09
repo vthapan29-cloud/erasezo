@@ -58,17 +58,20 @@ async function req(path, opts) { return fetch(base + path, opts); }
   assert.strictEqual(rAdmin.status, 200, "/admin serves the Control Room");
   const html = await rAdmin.text();
   assert.ok(/admin\.css/.test(html) && !/<style>/.test(html), "styles are an external file (strict CSP has no 'unsafe-inline')");
-  for (const asset of ["/admin.css", "/admin.js", "/admin/config.js", "/admin/supabase.js", "/admin/auth.js"]) {
+  for (const asset of ["/admin.css", "/admin.js", "/admin/auth.js"]) {
     assert.strictEqual((await req(asset)).status, 200, `${asset} resolves`);
   }
   console.log("ok - /admin serves the Control Room and every relative asset resolves");
 
-  // 6) CSP must allow the panel's Supabase host, or every sign-in dies as an
-  //    opaque "Failed to fetch" — while still granting no blanket escape hatch.
+  // 6) The panel talks only to this origin now, so connect-src stays closed.
+  //    No 'unsafe-inline' either — which is exactly why the auth modal's styles
+  //    live in admin.css rather than being injected from script.
   const csp = rAdmin.headers.get("content-security-policy");
-  assert.ok(/connect-src 'self' https:\/\/[a-z0-9-]+\.supabase\.co/.test(csp), "CSP allows the Supabase origin");
+  assert.ok(/connect-src 'self';/.test(csp), "connect-src is limited to this origin");
   assert.ok(!/unsafe-inline|unsafe-eval/.test(csp), "CSP grants no unsafe-inline/eval");
-  console.log("ok - CSP allows Supabase yet keeps script/style locked down");
+  const css = await (await req("/admin.css")).text();
+  assert.ok(css.includes(".sbm-ov"), "auth modal styles ship in the stylesheet, not injected at runtime");
+  console.log("ok - CSP stays locked down and the modal styles are CSP-safe");
 
   // 7) The extension's session-token keys must never be reachable through the
   //    settings bridge, in either direction — that allowlist is the whole

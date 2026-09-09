@@ -400,25 +400,36 @@
     ac.appendChild(an);
     panel.appendChild(ac);
 
-    // Cloud sync (Supabase — separate from erasio.io)
-    var clc = el("div", "card pad"); clc.appendChild(h3ic("subscription", "Cloud sync (Supabase)"));
+    // Account & security — the owner account itself, and its second factor.
     var ast = (window.Auth && Auth.state) || {};
-    var cfgOk = window.SB && SB.configured();
+    var clc = el("div", "card pad"); clc.appendChild(h3ic("user", "Account & security"));
     var cl = el("div"); cl.style.margin = "12px 0";
-    kvRow(cl, "Config", cfgOk ? "Ready" : "Not set — see admin/SETUP.md");
-    kvRow(cl, "Signed in", ast.user ? (ast.user.email || "yes") : "No");
-    kvRow(cl, "Admin", ast.isAdmin ? "Yes" : "No");
+    kvRow(cl, "Signed in as", (ast.user && ast.user.email) || "—");
+    kvRow(cl, "Two-factor", ast.totpEnabled ? "On" : "Off");
     clc.appendChild(cl);
+
     var clr = el("div", "row");
-    if (!ast.user) clr.appendChild(btn("Sign in", "sm", function () { if (window.Auth) Auth.openModal(); }));
-    else {
-      clr.appendChild(btn("Push to cloud", "sm", cloudPushNow));
-      clr.appendChild(btn("Pull from cloud", "ghost sm", pullNow));
-      clr.appendChild(btn("Sign out", "ghost sm", function () { Auth.signOut().then(function () { toast("Signed out"); }); }));
+    if (ast.totpEnabled) {
+      clr.appendChild(btn("Turn off 2FA", "ghost sm", function () { Auth.openTwoFactorDisable(); }));
+    } else {
+      clr.appendChild(btn("Turn on 2FA", "sm", function () { Auth.openTwoFactorSetup(); }));
     }
+    clr.appendChild(btn("Sign out", "ghost sm", function () { Auth.signOut().then(function () { toast("Signed out"); }); }));
     clc.appendChild(clr);
-    if (ast.user && !ast.isAdmin) clc.appendChild(el("div", "callout", "This email is not on the admin allowlist — cloud sync is off. Add it to config.js + the admins table."));
+    if (!ast.totpEnabled) {
+      clc.appendChild(el("div", "callout", "This account opens every setting, user and subscription. Two-factor means a leaked password alone isn't enough to get in."));
+    }
     panel.appendChild(clc);
+
+    // Settings backup — the panel's settings, saved server-side against this
+    // account so a reinstall or a second machine starts from where you left off.
+    var syc = el("div", "card pad"); syc.appendChild(h3ic("subscription", "Settings backup"));
+    syc.appendChild(el("p", "sec-sub", "Saves this panel's Detection, Removal and Video settings to your account. Autosaves as you edit; these are for restoring by hand."));
+    var syr = el("div", "row"); syr.style.marginTop = "12px";
+    syr.appendChild(btn("Back up now", "sm", cloudPushNow));
+    syr.appendChild(btn("Restore", "ghost sm", pullNow));
+    syc.appendChild(syr);
+    panel.appendChild(syc);
   }
 
   function renderMaskLocks(tab, panel) {
@@ -582,7 +593,7 @@
     var bar = document.querySelector(".topbar"); if (!bar) return;
     var b = document.getElementById("roleBadge");
     if (!b) { b = el("span"); b.id = "roleBadge"; b.className = "role-badge"; bar.insertBefore(b, document.getElementById("saveInd")); }
-    var role = st.verifying || !st.ready ? "verifying" : (!st.user ? "signed out" : st.needsMfa ? "2fa required" : (st.role || (st.isAdmin ? "admin" : "free")));
+    var role = st.verifying || !st.ready ? "verifying" : (st.isAdmin ? "admin" : "signed out");
     b.textContent = role;
     b.className = "role-badge r-" + role.replace(/\s+/g, "-");
   }
@@ -593,35 +604,33 @@
     for (var i = 0; i < 3; i++) { var s = el("div", "skel"); s.style.cssText = "height:84px;margin-bottom:14px"; w.appendChild(s); }
     panel.appendChild(w);
   }
+  var CONTROL_ROOM_URL = "https://erasezo.com/admin";
   function renderLoggedOut(panel) {
     panel.innerHTML = "";
     var c = el("div", "card pad gate-card");
+
+    // Opened as the extension's own options page, this copy can't sign in: the
+    // session cookie is SameSite=Lax, so the browser won't attach it to a
+    // request from a chrome-extension:// origin. Rather than present a login
+    // box that silently never works, send the owner to the hosted panel — which
+    // writes back to this very extension through page/webBridge.js anyway.
+    if (HAS_CHROME) {
+      c.appendChild(h3ic("user", "Open the Control Room"));
+      c.appendChild(el("p", "sec-sub", "The panel runs on erasezo.com, signed in with your owner account. Settings you change there apply to this extension straight away."));
+      var wr = el("div", "row"); wr.style.marginTop = "12px";
+      wr.appendChild(btn("Open erasezo.com/admin", "", function () {
+        try { chrome.tabs.create({ url: CONTROL_ROOM_URL }); }
+        catch (e) { window.open(CONTROL_ROOM_URL, "_blank", "noopener"); }
+      }));
+      c.appendChild(wr);
+      panel.appendChild(c);
+      return;
+    }
+
     c.appendChild(h3ic("user", "Sign in required"));
     c.appendChild(el("p", "sec-sub", "This control panel is for the owner account only. Your role is verified on the server before anything is shown."));
     var r = el("div", "row"); r.style.marginTop = "12px";
     r.appendChild(btn("Sign in", "", function () { if (window.Auth) Auth.openModal(); }));
-    c.appendChild(r);
-    panel.appendChild(c);
-  }
-  function renderFree(panel, st) {
-    panel.innerHTML = "";
-    var c = el("div", "card pad gate-card");
-    var kv = el("div"); kv.style.margin = "12px 0";
-    kvRow(kv, "Email", (st.user && st.user.email) || "—");
-    kvRow(kv, "Role", st.role || "free");
-    kvRow(kv, "Plan", st.plan || "free");
-    var r = el("div", "row"); r.style.marginTop = "10px";
-    if (st.needsMfa) {
-      c.appendChild(h3ic("user", "Two-factor verification required"));
-      c.appendChild(kv);
-      c.appendChild(el("div", "callout", "This is an admin account, but this session hasn't completed two-factor verification yet. Finish the code prompt to continue — closed it by mistake? Use the button below to reopen it."));
-      r.appendChild(btn("Continue 2FA", "", function () { if (window.Auth) Auth.refreshMe(); }));
-    } else {
-      c.appendChild(h3ic("user", "Signed in"));
-      c.appendChild(kv);
-      c.appendChild(el("div", "callout", "This account is not an admin, so the control panel is locked. If this is your owner account, add its email to the admins table (server-side)."));
-    }
-    r.appendChild(btn("Sign out", "ghost", function () { Auth.signOut().then(function () { toast("Signed out"); }); }));
     c.appendChild(r);
     panel.appendChild(c);
   }
@@ -648,8 +657,9 @@
     var title = document.getElementById("tab-title");
     var panel = document.getElementById("panel");
     if (st.verifying || !st.ready) { nav.innerHTML = ""; title.textContent = "Verifying…"; renderSkeleton(panel); return; }
-    if (!st.user) { nav.innerHTML = ""; title.textContent = "Sign in"; renderLoggedOut(panel); return; }
-    if (!st.isAdmin) { nav.innerHTML = ""; title.textContent = "Account"; renderFree(panel, st); return; }
+    // /api/admin/me answers only for a confirmed admin, so a signed-in state
+    // and an admin state are now the same thing — there is no in-between view.
+    if (!st.isAdmin) { nav.innerHTML = ""; title.textContent = "Sign in"; renderLoggedOut(panel); return; }
     render(); // server-confirmed admin → full control surface
   }
   function reload() { boot(); }
@@ -703,12 +713,22 @@
       b.classList.add("in"); b.textContent = "";
       b.appendChild(el("span", "acct-dot"));
       b.appendChild(document.createTextNode(st.isAdmin ? (st.user.email || "admin") : "signed in"));
-    } else { b.classList.remove("in"); b.textContent = "Sign in"; }
+    } else {
+      b.classList.remove("in");
+      // Same reason as renderLoggedOut: signing in from the extension's own
+      // origin can't work, so offer the hosted panel instead of a dead login.
+      b.textContent = HAS_CHROME ? "Open Control Room" : "Sign in";
+    }
   }
   function toggleAcctMenu() {
     if (acctMenu) { closeAcctMenu(); return; }
     var st = (window.Auth && Auth.state) || {};
-    if (!st.user) { if (window.Auth) Auth.openModal(); return; }
+    if (!st.user) {
+      if (HAS_CHROME) {
+        try { chrome.tabs.create({ url: CONTROL_ROOM_URL }); } catch (e) { window.open(CONTROL_ROOM_URL, "_blank", "noopener"); }
+      } else if (window.Auth) { Auth.openModal(); }
+      return;
+    }
     var m = el("div", "acct-menu");
     var who = el("div", "who");
     who.appendChild(document.createTextNode(st.isAdmin ? "Admin · " : "Signed in · "));

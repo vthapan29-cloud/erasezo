@@ -10,6 +10,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const path = require("path");
 const db = require("./db");
+const totp = require("./totp");
 
 const PORT = process.env.PORT || 3000;
 const PROD = process.env.NODE_ENV === "production";
@@ -22,17 +23,6 @@ const JWT_SECRET = process.env.JWT_SECRET || "dev-insecure-secret-change-me";
 const APP_URL = process.env.APP_URL || ("http://localhost:" + PORT);
 const COOKIE = "erasezo_token";
 const DAILY_FREE = Number(process.env.DAILY_FREE || 15);
-
-// Origin of the Control Room's Supabase project, read from the panel's own
-// config so the CSP can never drift out of sync with what the page actually
-// calls. Falls back to a wildcard-free no-op if the file is missing.
-const SUPABASE_ORIGIN = (() => {
-  try {
-    const cfg = require("fs").readFileSync(path.join(__dirname, "public", "admin", "config.js"), "utf8");
-    const m = cfg.match(/SUPABASE_URL:\s*"(https:\/\/[a-z0-9-]+\.supabase\.co)"/i);
-    return m ? m[1] : "";
-  } catch (e) { return ""; }
-})();
 
 const app = express();
 // Railway terminates TLS at its edge and forwards over its internal network,
@@ -53,9 +43,9 @@ app.use((req, res, next) => {
     "Content-Security-Policy",
     "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; " +
-    // The Control Room at /admin authenticates against its own Supabase project
-    // (separate from this app's Postgres login), so it needs that one host.
-    `connect-src 'self' ${SUPABASE_ORIGIN}; ` +
+    // Everything the site and the Control Room talk to is now this same origin —
+    // the panel's separate Supabase backend is gone.
+    "connect-src 'self'; " +
     "frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
   );
   if (PROD) res.setHeader("Strict-Transport-Security", "max-age=15552000; includeSubDomains");
@@ -86,11 +76,40 @@ setInterval(() => { const now = Date.now(); for (const [k, b] of RATE_BUCKETS) i
 const authLimiter = rateLimit("auth", 20, 5 * 60e3); // 20 attempts / 5 min / IP
 
 /* ---------- helpers ---------- */
-function sign(uid) { return jwt.sign({ uid }, JWT_SECRET, { expiresIn: "7d" }); }
+function sign(uid, claims) { return jwt.sign(Object.assign({ uid }, claims || {}), JWT_SECRET, { expiresIn: "7d" }); }
 function setAuthCookie(res, uid) {
   res.cookie(COOKIE, sign(uid), { httpOnly: true, sameSite: "lax", secure: PROD, maxAge: 7 * 864e5 });
 }
 function clearAuthCookie(res) { res.clearCookie(COOKIE, { httpOnly: true, sameSite: "lax", secure: PROD }); }
+
+/* The Control Room session is deliberately a SEPARATE cookie carrying its own
+ * `adm` claim, minted only by /api/admin/login after the password and (when
+ * enabled) the TOTP code are both satisfied.
+ *
+ * Sharing the ordinary user cookie would mean an admin who merely signed in on
+ * the normal site — where no second factor is asked for — would carry a session
+ * the panel accepts, quietly bypassing 2FA. Separate cookie, separate claim,
+ * separate lifetime: 12h rather than 7 days, since this one opens the panel. */
+const ADMIN_COOKIE = "erasezo_admin";
+const ADMIN_TTL_MS = 12 * 3600e3;
+function setAdminCookie(res, uid) {
+  res.cookie(ADMIN_COOKIE, jwt.sign({ uid, adm: true }, JWT_SECRET, { expiresIn: "12h" }),
+    { httpOnly: true, sameSite: "lax", secure: PROD, maxAge: ADMIN_TTL_MS });
+}
+async function adminAuth(req, res, next) {
+  const t = req.cookies && req.cookies[ADMIN_COOKIE];
+  if (!t) return res.status(401).json({ error: "not_authenticated" });
+  let payload;
+  try { payload = jwt.verify(t, JWT_SECRET); }
+  catch (e) { return res.status(401).json({ error: "invalid_token" }); }
+  if (payload.adm !== true) return res.status(403).json({ error: "not_admin" });
+  // Re-read the flag every request: revoking admin in the database must take
+  // effect immediately, not whenever an issued token happens to expire.
+  const u = (await db.query("select is_admin from users where id=$1", [payload.uid])).rows[0];
+  if (!u || !u.is_admin) return res.status(403).json({ error: "not_admin" });
+  req.userId = payload.uid;
+  next();
+}
 function auth(req, res, next) {
   const t = req.cookies && req.cookies[COOKIE];
   if (!t) return res.status(401).json({ error: "not_authenticated" });
@@ -279,6 +298,99 @@ app.post("/api/ext/refresh", extCors, authLimiter, async (req, res) => {
   } catch (e) { res.status(401).json({ message: "invalid_token" }); }
 });
 
+/* ---------- Control Room (super admin) ----------
+ * This replaces the panel's former Supabase project outright. That setup put a
+ * second account, a second password and a mandatory confirmation email between
+ * the owner and their own dashboard — and the free-tier project auto-paused
+ * once already, taking the panel down with it. One database, one login. */
+// Two buckets, because the risk differs. /api/admin/login is reachable by
+// anyone, so it stays tight. The 2FA endpoints already require a valid admin
+// session, so the only brute-force target there is the 6-digit code — 20 per
+// 5 min still leaves a million codes centuries out of reach, without
+// rate-limiting a legitimate owner out of their own 2FA setup.
+const adminLoginLimiter = rateLimit("adminLogin", 10, 5 * 60e3);
+const admin2faLimiter = rateLimit("admin2fa", 20, 5 * 60e3);
+
+app.post("/api/admin/login", adminLoginLimiter, async (req, res) => {
+  try {
+    const email = String(req.body.email || "").trim().toLowerCase();
+    const password = String(req.body.password || "");
+    const code = String(req.body.code || "");
+    const u = (await db.query(
+      "select id, password_hash, is_admin, totp_enabled, totp_secret from users where email=$1", [email]
+    )).rows[0];
+
+    // Same reply for "no such user", "wrong password" and "not an admin", so
+    // this endpoint can't be used to discover which accounts are admins.
+    const ok = u && u.password_hash && await bcrypt.compare(password, u.password_hash);
+    if (!ok || !u.is_admin) return res.status(401).json({ error: "invalid_credentials" });
+
+    if (u.totp_enabled) {
+      if (!code) return res.status(401).json({ error: "totp_required" });
+      if (!totp.verify(u.totp_secret, code)) return res.status(401).json({ error: "totp_invalid" });
+    }
+    setAdminCookie(res, u.id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: "server_error" }); }
+});
+
+app.post("/api/admin/logout", (req, res) => {
+  res.clearCookie(ADMIN_COOKIE, { httpOnly: true, sameSite: "lax", secure: PROD });
+  res.json({ ok: true });
+});
+
+app.get("/api/admin/me", adminAuth, async (req, res) => {
+  const u = (await db.query("select email, username, totp_enabled from users where id=$1", [req.userId])).rows[0];
+  res.json({ userId: req.userId, email: u.email, username: u.username, isAdmin: true, totpEnabled: !!u.totp_enabled });
+});
+
+app.get("/api/admin/settings", adminAuth, async (req, res) => {
+  const r = (await db.query("select settings from admin_settings where user_id=$1", [req.userId])).rows[0];
+  res.json((r && r.settings) || {});
+});
+
+app.put("/api/admin/settings", adminAuth, async (req, res) => {
+  const settings = req.body && typeof req.body === "object" ? req.body : {};
+  await db.query(
+    `insert into admin_settings (user_id, settings, updated_at) values ($1,$2,now())
+     on conflict (user_id) do update set settings=$2, updated_at=now()`,
+    [req.userId, JSON.stringify(settings)]
+  );
+  res.json({ ok: true });
+});
+
+/* 2FA. Enrolment stores the secret but leaves it disabled until a code proves
+ * the authenticator is really set up — otherwise a mistyped scan would lock the
+ * owner out of their own panel on the next sign-in. */
+app.post("/api/admin/2fa/setup", adminAuth, admin2faLimiter, async (req, res) => {
+  const u = (await db.query("select email, totp_enabled from users where id=$1", [req.userId])).rows[0];
+  if (u.totp_enabled) return res.status(409).json({ error: "already_enabled" });
+  const secret = totp.generateSecret();
+  await db.query("update users set totp_secret=$1 where id=$2", [secret, req.userId]);
+  res.json({ secret, otpauthUrl: totp.otpauthUrl(secret, u.email) });
+});
+
+app.post("/api/admin/2fa/enable", adminAuth, admin2faLimiter, async (req, res) => {
+  const u = (await db.query("select totp_secret from users where id=$1", [req.userId])).rows[0];
+  if (!u.totp_secret) return res.status(400).json({ error: "no_pending_secret" });
+  if (!totp.verify(u.totp_secret, req.body && req.body.code)) return res.status(400).json({ error: "totp_invalid" });
+  await db.query("update users set totp_enabled=true where id=$1", [req.userId]);
+  res.json({ ok: true });
+});
+
+app.post("/api/admin/2fa/disable", adminAuth, admin2faLimiter, async (req, res) => {
+  const u = (await db.query("select password_hash, totp_secret, totp_enabled from users where id=$1", [req.userId])).rows[0];
+  if (!u.totp_enabled) return res.json({ ok: true });
+  // Both factors again to turn it off — a borrowed open session shouldn't be
+  // enough to strip the second factor off the account.
+  const pwOk = u.password_hash && await bcrypt.compare(String((req.body && req.body.password) || ""), u.password_hash);
+  if (!pwOk || !totp.verify(u.totp_secret, req.body && req.body.code)) {
+    return res.status(401).json({ error: "invalid_credentials" });
+  }
+  await db.query("update users set totp_enabled=false, totp_secret=null where id=$1", [req.userId]);
+  res.json({ ok: true });
+});
+
 // MERGE-BY-EMAIL: if a user with this verified email already exists (e.g. a
 // password account), link googleId to that row — never create a duplicate.
 async function mergeOrCreateGoogleUser(info) {
@@ -365,8 +477,33 @@ function scheduleDailyReset() {
 }
 
 /* ---------- boot ---------- */
+/* Bootstraps the owner account from env, so the very first admin exists without
+ * anyone needing shell access to the database. Idempotent: safe on every boot.
+ * Setting ADMIN_PASSWORD to a new value and redeploying is also the password
+ * reset path — there is no self-serve reset for an account this privileged. */
+async function ensureAdminFromEnv() {
+  const email = String(process.env.ADMIN_EMAIL || "").trim().toLowerCase();
+  const password = String(process.env.ADMIN_PASSWORD || "");
+  if (!email || !password) return;
+  if (password.length < 12) { console.warn("[admin] ADMIN_PASSWORD is under 12 chars — refusing to set it."); return; }
+  const hash = await bcrypt.hash(password, 12);
+  const existing = (await db.query("select id from users where email=$1", [email])).rows[0];
+  if (existing) {
+    await db.query("update users set password_hash=$1, is_admin=true where id=$2", [hash, existing.id]);
+    console.log("[admin] owner account updated:", email);
+  } else {
+    const u = (await db.query(
+      "insert into users(email, username, auth_provider, password_hash, is_admin) values ($1,$2,'password',$3,true) returning id",
+      [email, email.split("@")[0], hash]
+    )).rows[0];
+    await grantDailyIfNeeded(u.id);
+    console.log("[admin] owner account created:", email);
+  }
+}
+
 async function start() {
   await db.init();
+  await ensureAdminFromEnv();
   if (require.main === module) {
     scheduleDailyReset();
     app.listen(PORT, () => console.log("Erasezo web on " + APP_URL));
@@ -374,4 +511,4 @@ async function start() {
 }
 if (require.main === module) start().catch((e) => { console.error("boot failed:", e); process.exit(1); });
 
-module.exports = { app, start, db, userPublic, grantDailyIfNeeded, mergeOrCreateGoogleUser, dailyResetAll };
+module.exports = { app, start, db, userPublic, grantDailyIfNeeded, mergeOrCreateGoogleUser, dailyResetAll, ensureAdminFromEnv };

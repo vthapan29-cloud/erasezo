@@ -61,6 +61,18 @@ create table if not exists subscriptions (
   plan                     text,
   current_period_end       timestamptz
 );
+-- Control Room settings, one row per admin. Replaces the Supabase table the
+-- panel used to sync to; keeping it here means the panel has no second
+-- database, and no second account, to go wrong.
+create table if not exists admin_settings (
+  user_id    integer primary key,
+  settings   jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+-- Added after the first deploy, so these must be ALTERs: "create table if not
+-- exists" above silently skips an existing table and would leave them missing.
+alter table users add column if not exists totp_secret  text;
+alter table users add column if not exists totp_enabled boolean not null default false;
 `;
 
 async function init() {

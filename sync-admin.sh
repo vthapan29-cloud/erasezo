@@ -13,7 +13,10 @@ DEST="$(dirname "$0")/public"
 cp "$SRC/admin.html" "$DEST/admin.html"
 cp "$SRC/admin.css"  "$DEST/admin.css"
 cp "$SRC/admin.js"   "$DEST/admin.js"
+# Mirror rather than copy-over: files deleted upstream (the old Supabase client
+# and its config) must not linger here and keep getting served.
+rm -rf "$DEST/admin"
 mkdir -p "$DEST/admin"
-cp "$SRC/admin/config.js" "$SRC/admin/supabase.js" "$SRC/admin/auth.js" "$DEST/admin/"
+cp "$SRC/admin/auth.js" "$DEST/admin/"
 
 echo "Control Room synced from $SRC"
