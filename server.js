@@ -109,9 +109,10 @@ async function adminAuth(req, res, next) {
   if (payload.adm !== true) return res.status(403).json({ error: "not_admin" });
   // Re-read the flag every request: revoking admin in the database must take
   // effect immediately, not whenever an issued token happens to expire.
-  const u = (await db.query("select is_admin, disabled from users where id=$1", [payload.uid])).rows[0];
+  const u = (await db.query("select is_admin, disabled, email from users where id=$1", [payload.uid])).rows[0];
   if (!u || !u.is_admin || u.disabled) return res.status(403).json({ error: "not_admin" });
   req.userId = payload.uid;
+  req.adminEmail = u.email;
   next();
 }
 function auth(req, res, next) {
@@ -503,14 +504,24 @@ app.post("/api/admin/login", adminLoginLimiter, async (req, res) => {
     // Same reply for "no such user", "wrong password" and "not an admin", so
     // this endpoint can't be used to discover which accounts are admins.
     const ok = u && u.password_hash && await bcrypt.compare(password, u.password_hash);
-    if (!ok || !u.is_admin) return res.status(401).json({ error: "invalid_credentials" });
-    if (u.disabled) return res.status(403).json(DISABLED_BODY);
+    if (!ok || !u.is_admin) {
+      audit(req, "admin.login_failed", { actorId: null, actorEmail: email, detail: { reason: ok ? "not_admin" : "bad_credentials" } });
+      return res.status(401).json({ error: "invalid_credentials" });
+    }
+    if (u.disabled) {
+      audit(req, "admin.login_failed", { actorId: null, actorEmail: email, detail: { reason: "disabled" } });
+      return res.status(403).json(DISABLED_BODY);
+    }
 
     if (u.totp_enabled) {
       if (!code) return res.status(401).json({ error: "totp_required" });
-      if (!totp.verify(u.totp_secret, code)) return res.status(401).json({ error: "totp_invalid" });
+      if (!totp.verify(u.totp_secret, code)) {
+        audit(req, "admin.login_failed", { actorId: u.id, actorEmail: email, detail: { reason: "bad_totp" } });
+        return res.status(401).json({ error: "totp_invalid" });
+      }
     }
     setAdminCookie(res, u.id);
+    audit(req, "admin.login", { actorId: u.id, actorEmail: email, detail: { twoFactor: !!u.totp_enabled } });
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: "server_error" }); }
 });
@@ -539,6 +550,26 @@ app.put("/api/admin/settings", adminAuth, async (req, res) => {
   );
   res.json({ ok: true });
 });
+
+/* Records an admin action. Deliberately fire-and-forget: an audit write that
+ * throws must never be the reason a legitimate change fails, and a caller that
+ * had to await it would be tempted to skip it on the error path — which is
+ * precisely the path worth recording. Failures are logged instead. */
+function audit(req, action, opts) {
+  opts = opts || {};
+  db.query(
+    "insert into admin_audit(actor_id, actor_email, action, target_type, target_id, detail, ip) values ($1,$2,$3,$4,$5,$6,$7)",
+    [
+      opts.actorId !== undefined ? opts.actorId : (req && req.userId) || null,
+      opts.actorEmail || (req && req.adminEmail) || null,
+      action,
+      opts.targetType || null,
+      opts.targetId != null ? String(opts.targetId) : null,
+      JSON.stringify(opts.detail || {}),
+      (req && req.ip) || null,
+    ]
+  ).catch((e) => console.error("[audit] could not record", action, e && e.message));
+}
 
 /* ---------- Control Room: the people using the extension ----------
  * The panel could previously only see this browser's own extension storage, so
@@ -657,12 +688,22 @@ app.patch("/api/admin/users/:id", adminAuth, async (req, res) => {
   if (id === req.userId && (b.disabled === true || b.isAdmin === false)) {
     return res.status(400).json({ error: "cannot_lock_self_out" });
   }
-  if (typeof b.disabled === "boolean") await db.query("update users set disabled=$1 where id=$2", [b.disabled, id]);
-  if (typeof b.isAdmin === "boolean") await db.query("update users set is_admin=$1 where id=$2", [b.isAdmin, id]);
+  const prev = (await db.query("select email, disabled, is_admin, daily_quota from users where id=$1", [id])).rows[0];
+  if (!prev) return res.status(404).json({ error: "not_found" });
+
+  if (typeof b.disabled === "boolean" && b.disabled !== prev.disabled) {
+    await db.query("update users set disabled=$1 where id=$2", [b.disabled, id]);
+    audit(req, b.disabled ? "user.disable" : "user.enable", { targetType: "user", targetId: id, detail: { email: prev.email } });
+  }
+  if (typeof b.isAdmin === "boolean" && b.isAdmin !== prev.is_admin) {
+    await db.query("update users set is_admin=$1 where id=$2", [b.isAdmin, id]);
+    audit(req, b.isAdmin ? "user.grant_admin" : "user.revoke_admin", { targetType: "user", targetId: id, detail: { email: prev.email } });
+  }
   if ("dailyQuota" in b) {
     const q = b.dailyQuota === null ? null : parseInt(b.dailyQuota, 10);
     if (q !== null && (!Number.isInteger(q) || q < 0 || q > 100000)) return res.status(400).json({ error: "bad_quota" });
     await db.query("update users set daily_quota=$1 where id=$2", [q, id]);
+    audit(req, "user.quota", { targetType: "user", targetId: id, detail: { email: prev.email, from: prev.daily_quota, to: q } });
   }
   if (b.subscription) {
     const status = String(b.subscription.status || "none");
@@ -673,6 +714,7 @@ app.patch("/api/admin/users/:id", adminAuth, async (req, res) => {
        on conflict (user_id) do update set status=$2, plan=$3, provider='manual', updated_at=now()`,
       [id, status, plan]
     );
+    audit(req, "user.subscription", { targetType: "user", targetId: id, detail: { email: prev.email, status: status, plan: plan } });
   }
   const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
   if (!r) return res.status(404).json({ error: "not_found" });
@@ -689,6 +731,7 @@ app.post("/api/admin/users/:id/credits", adminAuth, async (req, res) => {
   if (!(await db.query("select 1 from users where id=$1", [id])).rows[0]) return res.status(404).json({ error: "not_found" });
   const reason = String((req.body && req.body.reason) || "admin_adjust").slice(0, 60);
   await moveCredits(id, delta, reason);
+  audit(req, "user.credits", { targetType: "user", targetId: id, detail: { delta: delta, reason: reason } });
   const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
   res.json(shapeUser(r));
 });
@@ -739,6 +782,7 @@ app.post("/api/admin/plans", adminAuth, async (req, res) => {
     "insert into plans (id, name, daily_quota, price_inr, razorpay_plan_id, active, sort_order) values ($1,$2,$3,$4,$5,$6,$7)",
     [id, v.name, v.quota, v.price, v.razorpayPlanId, v.active, v.sortOrder]
   );
+  audit(req, "plan.create", { targetType: "plan", targetId: id, detail: { name: v.name, dailyQuota: v.quota, priceInr: v.price } });
   res.json({ ok: true });
 });
 
@@ -746,11 +790,13 @@ app.patch("/api/admin/plans/:id", adminAuth, async (req, res) => {
   const id = String(req.params.id);
   const v = readPlanBody(req.body || {});
   if (v.error) return res.status(400).json({ error: v.error });
+  const before = (await db.query("select name, daily_quota, price_inr, active from plans where id=$1", [id])).rows[0] || null;
   const r = await db.query(
     "update plans set name=$2, daily_quota=$3, price_inr=$4, razorpay_plan_id=$5, active=$6, sort_order=$7 where id=$1",
     [id, v.name, v.quota, v.price, v.razorpayPlanId, v.active, v.sortOrder]
   );
   if (!r.rowCount) return res.status(404).json({ error: "not_found" });
+  audit(req, "plan.update", { targetType: "plan", targetId: id, detail: { from: before, to: { name: v.name, dailyQuota: v.quota, priceInr: v.price, active: v.active } } });
   res.json({ ok: true });
 });
 
@@ -761,9 +807,38 @@ app.delete("/api/admin/plans/:id", adminAuth, async (req, res) => {
   if (id === "free") return res.status(400).json({ error: "cannot_delete_free" });
   const inUse = (await db.query("select count(*)::int c from subscriptions where plan=$1 and status='active'", [id])).rows[0].c;
   if (inUse > 0) return res.status(409).json({ error: "plan_in_use", message: inUse + " active subscriber(s) are on this plan. Move them first, or just deactivate it." });
+  const gone = (await db.query("select name, daily_quota, price_inr from plans where id=$1", [id])).rows[0];
   const r = await db.query("delete from plans where id=$1", [id]);
   if (!r.rowCount) return res.status(404).json({ error: "not_found" });
+  // The deleted row is copied into the entry — after the delete there is
+  // nothing left to look up.
+  audit(req, "plan.delete", { targetType: "plan", targetId: id, detail: gone || {} });
   res.json({ ok: true });
+});
+
+/* Read-only by design. There is deliberately no PATCH or DELETE here: a log
+ * the admins being logged can edit proves nothing. */
+app.get("/api/admin/audit", adminAuth, async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  const action = String(req.query.action || "").trim();
+  const params = [];
+  let where = "";
+  if (action) { params.push(action); where = " where action = $1"; }
+  params.push(limit, offset);
+  const rows = (await db.query(
+    `select id, actor_id, actor_email, action, target_type, target_id, detail, ip, created_at
+     from admin_audit${where} order by created_at desc, id desc limit $${params.length - 1} offset $${params.length}`,
+    params
+  )).rows;
+  const total = (await db.query(
+    `select count(*)::int c from admin_audit${action ? " where action = $1" : ""}`,
+    action ? [action] : []
+  )).rows[0].c;
+  // The distinct actions present, so the UI can offer a filter without
+  // hardcoding a list that drifts as new actions are added.
+  const actions = (await db.query("select distinct action from admin_audit order by action")).rows.map((r) => r.action);
+  res.json({ entries: rows, total, limit, offset, actions });
 });
 
 app.get("/api/admin/stats", adminAuth, async (req, res) => {
@@ -808,6 +883,7 @@ app.post("/api/admin/2fa/enable", adminAuth, admin2faLimiter, async (req, res) =
   if (!u.totp_secret) return res.status(400).json({ error: "no_pending_secret" });
   if (!totp.verify(u.totp_secret, req.body && req.body.code)) return res.status(400).json({ error: "totp_invalid" });
   await db.query("update users set totp_enabled=true where id=$1", [req.userId]);
+  audit(req, "admin.2fa_enabled", { targetType: "user", targetId: req.userId });
   res.json({ ok: true });
 });
 
@@ -821,6 +897,7 @@ app.post("/api/admin/2fa/disable", adminAuth, admin2faLimiter, async (req, res) 
     return res.status(401).json({ error: "invalid_credentials" });
   }
   await db.query("update users set totp_enabled=false, totp_secret=null where id=$1", [req.userId]);
+  audit(req, "admin.2fa_disabled", { targetType: "user", targetId: req.userId });
   res.json({ ok: true });
 });
 

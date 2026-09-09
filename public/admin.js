@@ -170,6 +170,7 @@
         { b: "settings", k: "darkMode", t: "toggle", live: 1, label: "Dark mode", help: "Relayed to the on-page overlays." }
       ]}]
     },
+    { id: "audit", title: "Audit log", icon: "📜", custom: renderAudit },
     { id: "maintenance", title: "Maintenance", icon: "🧰", custom: renderMaintenance }
   ];
 
@@ -179,6 +180,7 @@
 
   /* ---- inline icon set (Lucide-style strokes; keyed by tab id + dashboard heads) ---- */
   var ICONS = {
+    audit: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h4"/>',
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     plans: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
@@ -844,6 +846,104 @@
     panel.appendChild(c2);
   }
 
+
+  /* ---- Audit log ----
+   * Append-only: this view can read and filter, and there is no control here
+   * that edits or clears it, because a log its own admins can rewrite is not
+   * evidence of anything. */
+  var auditState = { loading: false, data: null, error: null, action: "", offset: 0, limit: 50 };
+
+  function loadAudit() {
+    auditState.loading = true;
+    adminApi("/api/admin/audit?limit=" + auditState.limit + "&offset=" + auditState.offset +
+             (auditState.action ? "&action=" + encodeURIComponent(auditState.action) : ""))
+      .then(function (d) { auditState.data = d; auditState.error = null; })
+      .catch(function (e) { auditState.error = e.message; })
+      .then(function () { auditState.loading = false; render(); });
+  }
+
+  var ACTION_LABEL = {
+    "admin.login": "Signed in", "admin.login_failed": "Sign-in refused",
+    "admin.2fa_enabled": "Turned on 2FA", "admin.2fa_disabled": "Turned off 2FA",
+    "user.disable": "Disabled an account", "user.enable": "Re-enabled an account",
+    "user.grant_admin": "Granted admin", "user.revoke_admin": "Revoked admin",
+    "user.quota": "Changed a daily quota", "user.subscription": "Changed a subscription",
+    "user.credits": "Adjusted credits",
+    "plan.create": "Created a plan", "plan.update": "Edited a plan", "plan.delete": "Deleted a plan"
+  };
+
+  function renderAudit(tab, panel) {
+    var ph = el("div", "panel-head"); ph.appendChild(el("h2", null, "Audit log"));
+    ph.appendChild(el("p", null, "Every change an admin made, and every sign-in that was refused. Read-only — nothing here can edit or clear it."));
+    panel.appendChild(ph);
+
+    if (auditState.error) {
+      var ec = el("div", "card pad"); ec.appendChild(el("div", "callout", "Couldn't load the log: " + auditState.error));
+      panel.appendChild(ec); return;
+    }
+    if (!auditState.data) { if (!auditState.loading) loadAudit(); renderSkeleton(panel); return; }
+    var d = auditState.data;
+
+    var fc = el("div", "card pad");
+    var frow = el("div", "row");
+    var sel = el("select");
+    var all = el("option", null, "All activity"); all.value = ""; sel.appendChild(all);
+    (d.actions || []).forEach(function (a) {
+      var o = el("option", null, ACTION_LABEL[a] || a); o.value = a;
+      if (a === auditState.action) o.selected = true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener("change", function () { auditState.action = sel.value; auditState.offset = 0; loadAudit(); });
+    frow.appendChild(sel);
+    frow.appendChild(el("span", "sec-sub", d.total + (d.total === 1 ? " entry" : " entries")));
+    fc.appendChild(frow);
+    panel.appendChild(fc);
+
+    var lc = el("div", "card pad");
+    if (!d.entries.length) {
+      lc.appendChild(el("div", "callout", auditState.action ? "Nothing recorded for that action yet." : "Nothing recorded yet."));
+      panel.appendChild(lc); return;
+    }
+    d.entries.forEach(function (e) { lc.appendChild(auditRow(e)); });
+
+    if (d.total > d.limit) {
+      var pr = el("div", "row"); pr.style.marginTop = "14px";
+      if (d.offset > 0) pr.appendChild(btn("← Newer", "ghost sm", function () { auditState.offset = Math.max(0, d.offset - d.limit); loadAudit(); }));
+      if (d.offset + d.limit < d.total) pr.appendChild(btn("Older →", "ghost sm", function () { auditState.offset = d.offset + d.limit; loadAudit(); }));
+      lc.appendChild(pr);
+    }
+    panel.appendChild(lc);
+  }
+
+  function auditRow(e) {
+    var wrap = el("div", "userrow");
+    var head = el("div", "userrow-head"); head.style.cursor = "default";
+    var who = el("div", "userrow-who");
+    who.appendChild(el("b", null, ACTION_LABEL[e.action] || e.action));
+    var meta = el("span", "userrow-meta");
+    meta.textContent = (e.actor_email || "unknown") + " · " + fmtWhen(e.created_at) + (e.ip ? " · " + e.ip : "");
+    who.appendChild(meta);
+    head.appendChild(who);
+
+    var tags = el("div", "userrow-tags");
+    if (e.action.indexOf("failed") !== -1) tags.appendChild(el("span", "utag utag-off", "refused"));
+    if (e.target_type) tags.appendChild(el("span", "utag utag-muted", e.target_type + " " + (e.target_id || "")));
+    head.appendChild(tags);
+    wrap.appendChild(head);
+
+    var detail = e.detail && Object.keys(e.detail).length ? e.detail : null;
+    if (detail) {
+      var body = el("div", "userrow-body");
+      Object.keys(detail).forEach(function (k) {
+        var v = detail[k];
+        kvRow(body, k, (v && typeof v === "object") ? JSON.stringify(v) : String(v));
+      });
+      wrap.appendChild(body);
+    }
+    return wrap;
+  }
+  function fmtWhen(s) { try { return new Date(s).toLocaleString(); } catch (e) { return "—"; } }
+
   function renderMaintenance(tab, panel) {
     var ph = el("div", "panel-head"); ph.appendChild(el("h2", null, "Maintenance")); ph.appendChild(el("p", null, "Import / export the whole config, reset to defaults, and edit any storage key directly."));
     panel.appendChild(ph);
@@ -912,7 +1012,7 @@
   var NAV_GROUPS = [
     { label: "Service", ids: ["dashboard", "users", "plans"] },
     { label: "Engine", ids: ["detection", "removal", "masklocks", "video", "sites"] },
-    { label: "System", ids: ["sync", "localization", "maintenance"] }
+    { label: "System", ids: ["audit", "sync", "localization", "maintenance"] }
   ];
 
   function buildNav() {

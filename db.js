@@ -112,6 +112,27 @@ create table if not exists plans (
   active           boolean not null default true,
   sort_order       integer not null default 0
 );
+-- Who changed what, and when. Append-only: there is no endpoint that updates or
+-- deletes a row here, because a log an admin can edit is not evidence of
+-- anything.
+--
+-- actor_email is stored alongside actor_id on purpose. An entry reading
+-- "user 7 disabled an account" becomes useless the moment user 7 is renamed or
+-- removed, which is exactly when you most want to read it. actor_id is
+-- nullable so a FAILED sign-in — the entry that matters most when someone is
+-- trying to get in — can still be recorded with no session behind it.
+create table if not exists admin_audit (
+  id          serial primary key,
+  actor_id    integer,
+  actor_email text,
+  action      text not null,
+  target_type text,
+  target_id   text,
+  detail      jsonb not null default '{}'::jsonb,
+  ip          text,
+  created_at  timestamptz not null default now()
+);
+create index if not exists admin_audit_created on admin_audit (created_at desc);
 `;
 
 // Seeded rather than hardcoded so the Control Room can edit them, but only when
