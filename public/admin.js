@@ -19,7 +19,8 @@
       logoVersion: "old", maskScale: 1, gainDrift: 0.62, nccGood: 0.5, nccAccept: 0.3,
       scanStride: 8, refineRadius: 8, alphaThreshold: 0.002, maxAlpha: 0.99, logoValue: 255,
       maskPosition: { mode: "auto", dx: 0, dy: 0 },
-      maskLocks: [{ w: 1376, h: 768, x: 1255, y: 647 }]
+      maskLocks: [{ w: 1376, h: 768, x: 1255, y: 647 }],
+      fullGainOnLock: true
     },
     video: {
       logoVersion: "old", maskScale: 1, baseStrength: 1, opacityMode: "auto", opacityCustom: 0.5,
@@ -98,9 +99,10 @@
 
   var state = { settings: {}, image: {}, video: {}, raw: {} };
 
-  /* ---- schema ---- */
-  var LIVE = { badge: "live", cls: "badge-live" };   // relays to the running engine/gate now
-  var SOON = { badge: "saved", cls: "badge-soon" };  // persists; runtime hook lands in a later phase
+  /* ---- schema ----
+   * Every field here is wired to something that reads it. Controls that only
+   * persisted a value nothing consumed have been removed rather than left
+   * looking operational. */
 
   var SCHEMA = [
     { id: "dashboard", title: "Dashboard", icon: "📊", custom: renderDashboard },
@@ -124,7 +126,7 @@
         { b: "image", k: "alphaThreshold", t: "number", min: 0, max: 0.05, step: 0.001, live: 1, label: "Alpha threshold", help: "α below this is skipped during blend." },
         { b: "image", k: "maxAlpha", t: "number", min: 0.8, max: 0.999, step: 0.001, live: 1, label: "Max alpha", help: "α cap before ÷(1−α) to avoid blow-ups." },
         { b: "image", k: "logoValue", t: "number", min: 0, max: 255, step: 1, live: 1, label: "Logo value", help: "Assumed RGB value of the watermark color." },
-        { b: "settings", k: "fullGainOnLock", t: "toggle", live: 0, label: "Full strength on locked position", help: "Use 100% gain on a user-locked mask instead of the drift gain. (Engine phase)" }
+        { b: "image", k: "fullGainOnLock", t: "toggle", live: 1, label: "Full strength on a locked mask", help: "A pinned position is a statement of fact, so blend at 100% rather than the drift gain. Turn off if a lock is slightly imprecise." }
       ]}]
     },
     { id: "masklocks", title: "Mask Locks", icon: "📌", custom: renderMaskLocks },
@@ -134,13 +136,7 @@
         { title: "Master · erasioSettings", fields: [
           { b: "settings", k: "enableAutoRemoval", t: "toggle", live: 1, label: "Auto-removal", help: "Clean images automatically at display time." },
           { b: "settings", k: "enableFlow", t: "toggle", live: 1, label: "Flow support", help: "Inject buttons + intercept downloads on Flow." },
-          { b: "settings", k: "skipPreview", t: "toggle", live: 1, label: "Skip preview", help: "Download immediately instead of the Before/After modal." },
-          { b: "settings", k: "autoDownload", t: "toggle", live: 0, label: "Auto-download", help: "Save without prompting." }
-        ]},
-        { title: "Per-site (engine phase)", fields: [
-          { b: "settings", k: "enableGemini", t: "toggle", live: 0, def: true, label: "Gemini", help: "gemini.google.com" },
-          { b: "settings", k: "enableAiStudio", t: "toggle", live: 0, def: true, label: "AI Studio", help: "aistudio.google.com" },
-          { b: "settings", k: "enableDocs", t: "toggle", live: 0, def: true, label: "Google Vids", help: "docs.google.com/videos" }
+          { b: "settings", k: "skipPreview", t: "toggle", live: 1, label: "Skip preview", help: "Download immediately instead of the Before/After modal." }
         ]}
       ]
     },
@@ -164,59 +160,14 @@
         ]}
       ]
     },
-    { id: "output", title: "Output & Format", icon: "🖼️",
-      desc: "Encoding, naming, and quality of the saved file.",
-      groups: [{ title: "Format · erasioSettings", fields: [
-        { b: "settings", k: "formatOverride", t: "select", live: 0, def: "auto", options: [["auto", "Preserve source"], ["png", "Force PNG"], ["jpeg", "Force JPEG"], ["webp", "Force WebP"]], label: "Format policy", help: "Default keeps JPEG→JPEG, WebP→WebP, else PNG." },
-        { b: "settings", k: "encodeQuality", t: "range", live: 0, def: 0.95, min: 0.5, max: 1, step: 0.01, label: "Encode quality", help: "JPEG/WebP quality. (Engine phase)" },
-        { b: "settings", k: "imageQuality", t: "select", live: 0, options: [["high", "High"], ["medium", "Medium"], ["low", "Low"]], label: "Image quality" },
-        { b: "settings", k: "performanceMode", t: "select", live: 0, options: [["quality", "Quality"], ["speed", "Speed"]], label: "Performance mode" },
-        { b: "settings", k: "filenameTemplate", t: "text", live: 0, def: "flow-{id}-erasio.{ext}", label: "Filename template", help: "Tokens: {id} {ext} {w} {h}. (Engine phase)" },
-        { b: "settings", k: "defaultModel", t: "select", live: 0, options: [["v2", "v2"], ["v1", "v1"]], label: "Default model" }
-      ]}]
-    },
-    { id: "batch", title: "Batch & Bulk", icon: "🗂️",
-      desc: "Multi-select removal and ZIP export across Flow, Gemini and Vids.",
-      groups: [{ title: "Batch · erasioSettings", fields: [
-        { b: "settings", k: "batchProcessing", t: "toggle", live: 0, label: "Batch processing", help: "Enable the multi-select layer." },
-        { b: "settings", k: "batchAllTiers", t: "toggle", live: 0, label: "Unlock for all tiers", help: "Bypass the paid gate on the batch checkbox. (Engine phase)" },
-        { b: "settings", k: "zipEnabled", t: "toggle", live: 0, def: true, label: "ZIP export", help: "Bundle a batch into one archive." },
-        { b: "settings", k: "batchCap", t: "number", live: 0, def: 40, min: 2, max: 200, step: 1, label: "Batch cap", help: "Max items per batch." }
-      ]}]
-    },
-    { id: "notifications", title: "Notifications", icon: "🔔",
-      desc: "Toasts and the prompts the extension shows.",
-      groups: [{ title: "Prompts · erasioSettings", fields: [
-        { b: "settings", k: "showNotifications", t: "toggle", live: 0, label: "Show notifications", help: "Success and status toasts." },
-        { b: "settings", k: "disableRatePrompt", t: "toggle", live: 0, label: "Disable rate prompt", help: "Never ask for a store review." },
-        { b: "settings", k: "disableUpsell", t: "toggle", live: 0, label: "Disable upsell", help: "Hide upgrade prompts." },
-        { b: "settings", k: "disableAnnouncements", t: "toggle", live: 0, label: "Disable announcements", help: "Suppress server announcements." }
-      ]}]
-    },
     { id: "sync", title: "Sync & Cache", icon: "⚙️",
       desc: "Background refresh cadence and the in-page caches.",
       custom: renderSync
     },
-    { id: "history", title: "History & Data", icon: "🕘",
-      desc: "What the extension keeps.",
-      groups: [{ title: "History · erasioSettings", fields: [
-        { b: "settings", k: "saveImagesToHistory", t: "toggle", live: 0, label: "Save to history" },
-        { b: "settings", k: "historyDays", t: "number", live: 0, min: 1, max: 365, step: 1, label: "Retention (days)" }
-      ]}]
-    },
     { id: "localization", title: "Localization", icon: "🌍",
       desc: "Language and appearance.",
-      groups: [{ title: "Locale · erasioSettings / erasioLang", fields: [
-        { b: "settings", k: "language", t: "select", live: 0, def: "en", options: Object.keys(LOCALES).map(function (k) { return [k, LOCALES[k]]; }), label: "Language" },
+      groups: [{ title: "Appearance · erasioSettings", fields: [
         { b: "settings", k: "darkMode", t: "toggle", live: 1, label: "Dark mode", help: "Relayed to the on-page overlays." }
-      ]}]
-    },
-    { id: "experimental", title: "Experimental", icon: "🧪",
-      desc: "New engine capabilities. These persist and switch on as each engine phase lands.",
-      groups: [{ title: "Engine roadmap", fields: [
-        { b: "settings", k: "inpaintFallback", t: "toggle", live: 0, label: "Inpaint fallback", help: "Pure-JS Telea fill on residue after reverse-blend." },
-        { b: "settings", k: "multiCornerScan", t: "toggle", live: 0, label: "Multi-corner scan", help: "Search all four corners, not just bottom-right." },
-        { b: "settings", k: "autoSparkleVersion", t: "toggle", live: 0, label: "Auto new-sparkle", help: "Pick old/2026 map by shape match automatically." }
       ]}]
     },
     { id: "maintenance", title: "Maintenance", icon: "🧰", custom: renderMaintenance }
@@ -228,19 +179,16 @@
 
   /* ---- inline icon set (Lucide-style strokes; keyed by tab id + dashboard heads) ---- */
   var ICONS = {
+    users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
+    plans: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
     detection: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
     removal: '<path d="m7 21-4.3-4.3a1.7 1.7 0 0 1 0-2.4l9.6-9.6a1.7 1.7 0 0 1 2.4 0l5 5a1.7 1.7 0 0 1 0 2.4L13 21"/><path d="M22 21H8"/><path d="m5 12 7 7"/>',
     masklocks: '<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
     sites: '<circle cx="12" cy="12" r="9"/><path d="M12 3a13 13 0 0 0 0 18 13 13 0 0 0 0-18"/><path d="M3 12h18"/>',
     video: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 3v18"/><path d="M17 3v18"/><path d="M3 12h18"/><path d="M3 7.5h4"/><path d="M3 16.5h4"/><path d="M17 7.5h4"/><path d="M17 16.5h4"/>',
-    output: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.8"/><path d="m21 15-4.5-4.5L6 21"/>',
-    batch: '<path d="M12 2 2 7l10 5 10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/>',
-    notifications: '<path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/><path d="M4 17h16c-1.5-1.5-2.5-3-2.5-7a5.5 5.5 0 0 0-11 0c0 4-1 5.5-2.5 7Z"/>',
     sync: '<path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/>',
-    history: '<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/>',
     localization: '<path d="m4 14 6-6 2-3"/><path d="m5 8 6 6"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
-    experimental: '<path d="M10 2v7.5L4.8 20.5A1 1 0 0 0 5.7 22h12.6a1 1 0 0 0 .9-1.5L14 9.5V2"/><path d="M8.5 2h7"/><path d="M7 16h10"/>',
     maintenance: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8Z"/>',
     user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
     subscription: '<path d="M6 3h12l4 6-10 12L2 9Z"/><path d="M11 3 8 9l4 12 4-12-3-6"/><path d="M2 9h20"/>',
@@ -312,11 +260,9 @@
       tx.addEventListener("change", function () { state[f.b][f.k] = tx.value; scheduleSave(f.b); });
       ctl.appendChild(tx);
     }
-    ctl.appendChild(mkBadge(f.live));
     row.appendChild(ctl);
     return row;
   }
-  function mkBadge(live) { return el("span", live ? LIVE.cls : SOON.cls, live ? LIVE.badge : SOON.badge); }
   function fmt(v, step) { var d = (String(step).split(".")[1] || "").length; return Number(v).toFixed(Math.min(d, 3)); }
 
   /* ---- tab renderers ---- */
@@ -349,8 +295,6 @@
       var d = el("div", "tile"); d.appendChild(el("div", "v", value)); d.appendChild(el("div", "l", label));
       tiles.appendChild(d); return d;
     }
-    tile("Processed here", processed.toLocaleString());
-    tile("Power", enabled ? "On" : "Off");
     var tUsers = tile("Users", "…"), tSubs = tile("Active plans", "…"), tCredits = tile("Credits used today", "…");
     panel.appendChild(tiles);
 
@@ -366,10 +310,22 @@
       tCredits.querySelector(".v").textContent = String(adminStats.credits.usedToday);
     }
 
+    var sep = el("div", "group-title", "This browser's extension");
+    sep.style.marginTop = "22px";
+    panel.appendChild(sep);
+    panel.appendChild(el("p", "sec-sub", "The tiles above cover the whole service. Everything below is the Erasezo extension installed in THIS browser — useful for testing, but not what your customers see."));
+
+    var localTiles = el("div", "tiles"); localTiles.style.marginTop = "12px";
+    [["Images cleaned here", processed.toLocaleString()], ["Extension", enabled ? "On" : "Off"]].forEach(function (t) {
+      var d = el("div", "tile"); d.appendChild(el("div", "v", t[1])); d.appendChild(el("div", "l", t[0]));
+      localTiles.appendChild(d);
+    });
+    panel.appendChild(localTiles);
+
     var grid = el("div", "subgrid two"); grid.style.marginTop = "16px";
 
-    // User control
-    var uc = el("div", "card pad"); uc.appendChild(h3ic("user", "User control"));
+    // The extension's own session on this machine — not a customer account.
+    var uc = el("div", "card pad"); uc.appendChild(h3ic("user", "Extension session here"));
     var ukv = el("div"); ukv.style.margin = "12px 0";
     kvRow(ukv, "Username", user && user.username ? user.username : "Guest");
     kvRow(ukv, "Email", user && user.email ? user.email : "—");
@@ -403,13 +359,18 @@
     grid.appendChild(sc);
     panel.appendChild(grid);
 
-    // Credit control
-    var cc = el("div", "card pad"); cc.appendChild(h3ic("credit", "Credit control"));
-    var crow = el("div", "row"); crow.style.margin = "12px 0";
-    crow.appendChild(labelWrap("Remaining", numInput(cs.remaining != null ? cs.remaining : 999999, function (v) { setCredit(Object.assign({}, cs, { remaining: v })); })));
-    crow.appendChild(labelWrap("Limit", numInput(cs.limit != null ? cs.limit : 0, function (v) { setCredit(Object.assign({}, cs, { limit: v })); })));
-    cc.appendChild(crow);
+    // Credit control. Read-only on purpose: credits are decided by the server
+    // now, so a number typed into this browser's cache would be overwritten by
+    // the next sync — an editable field here would just be a way to confuse
+    // yourself. Real changes live in Users (one account) and Plans (a tier).
+    var cc = el("div", "card pad"); cc.appendChild(h3ic("credit", "Credits on this machine"));
+    var ckv = el("div"); ckv.style.margin = "12px 0";
+    kvRow(ckv, "Remaining", cs.remaining != null ? String(cs.remaining) : "—");
+    kvRow(ckv, "Daily limit", cs.limit ? String(cs.limit) : (cs.limit === 0 ? "Unlimited" : "—"));
+    kvRow(ckv, "Images cleaned here", processed.toLocaleString());
+    cc.appendChild(ckv);
     var crow2 = el("div", "row");
+    crow2.appendChild(btn("Grant credits to a user", "sm", function () { active = "users"; render(); }));
     crow2.appendChild(btn("Reset processed count", "ghost sm", function () { state.raw.processedCount = 0; store.set({ processedCount: 0 }); toast("Processed count reset"); reload(); }));
     cc.appendChild(crow2);
     panel.appendChild(cc);
@@ -826,7 +787,7 @@
     var dy = numInput(mp.dy || 0, function (v) { mp.dy = v; state.image.maskPosition = mp; scheduleSave("image"); });
     dx.style.width = dy.style.width = "70px";
     sel.addEventListener("change", function () { mp.mode = sel.value; state.image.maskPosition = mp; scheduleSave("image"); });
-    fctl.appendChild(sel); fctl.appendChild(labelWrap("dx", dx)); fctl.appendChild(labelWrap("dy", dy)); fctl.appendChild(mkBadge(1));
+    fctl.appendChild(sel); fctl.appendChild(labelWrap("dx", dx)); fctl.appendChild(labelWrap("dy", dy));
     frow.appendChild(fctl); mcard.appendChild(frow);
     panel.appendChild(mcard);
 
@@ -868,8 +829,7 @@
     panel.appendChild(ph);
     panel.appendChild(el("div", "group-title", "Intervals · erasioSettings (engine phase)"));
     var c1 = el("div", "card");
-    [{ b: "settings", k: "creditSyncSec", def: 30, min: 5, max: 600, step: 1, live: 0, label: "Credit sync (sec)", help: "How often the worker refreshes credit status." },
-     { b: "settings", k: "announcementSyncMin", def: 30, min: 1, max: 240, step: 1, live: 0, label: "Announcement sync (min)" }]
+    []
       .forEach(function (f) { f.t = "number"; c1.appendChild(fieldRow(f)); });
     panel.appendChild(c1);
 
@@ -927,7 +887,6 @@
   function numInput(val, fn) { var n = el("input"); n.type = "number"; n.value = val; n.addEventListener("change", function () { fn(parseInt(n.value, 10) || 0); }); return n; }
   function labelWrap(lab, inp) { var w = el("label"); w.style.display = "inline-flex"; w.style.alignItems = "center"; w.style.gap = "6px"; w.style.fontFamily = '"IBM Plex Mono",monospace'; w.style.fontSize = "12px"; w.style.color = "var(--ink-faint)"; w.appendChild(document.createTextNode(lab)); w.appendChild(inp); return w; }
 
-  function setCredit(obj) { state.raw.erasioCreditStatus = obj; store.set({ erasioCreditStatus: obj, erasioCreditStatusUpdatedAt: Date.now() }).then(function () { toast("Credit status updated"); reload(); }); }
   function postToTabs(msg) { /* best-effort: relayed via storage flag some engines watch */ store.set({ __erasioAdminSignal: { msg: msg, at: Date.now() } }); }
 
   function exportAll() {
@@ -945,14 +904,41 @@
 
   /* ---- boot ---- */
   var active = "dashboard";
+  /* Two kinds of setting live in this panel and conflating them is what made it
+   * confusing: SERVICE settings are server-side and affect every customer,
+   * EXTENSION settings are this browser's chrome.storage and affect the engine.
+   * Grouping the nav makes the blast radius of a change obvious before it's
+   * made. */
+  var NAV_GROUPS = [
+    { label: "Service", ids: ["dashboard", "users", "plans"] },
+    { label: "Engine", ids: ["detection", "removal", "masklocks", "video", "sites"] },
+    { label: "System", ids: ["sync", "localization", "maintenance"] }
+  ];
+
   function buildNav() {
     var nav = document.getElementById("nav"); nav.innerHTML = "";
-    SCHEMA.forEach(function (tab) {
-      var b = el("button"); if (tab.id === active) b.className = "on";
-      b.appendChild(icon(tab.id, "nav-ic")); b.appendChild(document.createTextNode(tab.title));
-      b.addEventListener("click", function () { active = tab.id; render(); });
-      nav.appendChild(b);
+    var placed = {};
+    NAV_GROUPS.forEach(function (g) {
+      var tabs = g.ids.map(function (id) {
+        return SCHEMA.filter(function (t) { return t.id === id; })[0];
+      }).filter(Boolean);
+      if (!tabs.length) return;
+      nav.appendChild(el("div", "navlabel", g.label));
+      tabs.forEach(function (tab) { placed[tab.id] = true; nav.appendChild(navBtn(tab)); });
     });
+    // Anything added to SCHEMA without being placed in a group still shows up,
+    // rather than silently disappearing from the panel.
+    var rest = SCHEMA.filter(function (t) { return !placed[t.id]; });
+    if (rest.length) {
+      nav.appendChild(el("div", "navlabel", "Other"));
+      rest.forEach(function (tab) { nav.appendChild(navBtn(tab)); });
+    }
+  }
+  function navBtn(tab) {
+    var b = el("button"); if (tab.id === active) b.className = "on";
+    b.appendChild(icon(tab.id, "nav-ic")); b.appendChild(document.createTextNode(tab.title));
+    b.addEventListener("click", function () { active = tab.id; render(); });
+    return b;
   }
   function render() {
     buildNav();
