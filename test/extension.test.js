@@ -60,12 +60,41 @@ for (const host of FLOW_HOSTS) {
 /* 4. Downloads are intercepted by URL, and the move changes that URL: under
       labs.google the app lives at /fx, on its own domain it is at the root. */
 const inj = fs.readFileSync(path.join(ext, "page/flowInjector.js"), "utf8");
-const reSrc = inj.match(/const REDIRECT_URL_RE = (\/.*\/i);/);
-ok(reSrc, "flowInjector still defines REDIRECT_URL_RE");
-const RE = eval(reSrc[1]);
-ok(RE.test("/fx/api/trpc/media.getMediaUrlRedirect?name=abc"), "labs.google download URL still intercepted");
-ok(RE.test("/api/trpc/media.getMediaUrlRedirect?name=abc"), "flow.google.com download URL intercepted");
+const epSrc = inj.match(/const MEDIA_ENDPOINT = String\.raw`([^`]*)`;/);
+ok(epSrc, "flowInjector defines the media endpoint once");
+const RE = new RegExp(epSrc[1], "i");
+ok(RE.test("/fx/api/trpc/media.getMediaUrlRedirect?name=abc"), "labs.google media URL matches");
+ok(RE.test("/api/trpc/media.getMediaUrlRedirect?name=abc"), "flow.google.com media URL matches");
 ok(!RE.test("/api/trpc/media.list"), "an unrelated tRPC call is left alone");
+
+/* The same endpoint drives three patterns: the download interception, and the
+   two src checks that decide whether a tile gets a button at all. It was
+   spelled out separately in each, which is how the download path got fixed
+   for the new domain while the two src checks stayed on /fx and the button
+   went on not appearing. */
+for (const name of ["FLOW_VIDEO_SRC_PATTERN", "FLOW_IMAGE_SRC_PATTERN", "REDIRECT_URL_RE"]) {
+  const decl = inj.match(new RegExp("const " + name + "\\s*=\\s*([^;]+);"));
+  ok(decl && decl[1].includes("MEDIA_ENDPOINT"), name + " is built from the one endpoint, not its own copy");
+}
+ok(!/\/fx\\\/api/.test(inj.replace(/\/\/.*$/gm, "")),
+   "no code path still hardcodes the /fx prefix");
+
+/* 4b. A tile only gets its button if the image looks like generated media.
+      That decision used to rest entirely on alt text matching /image/i —
+      Flow's own label, which is localised, so a Hindi or Spanish UI failed it.
+      Size is the second signal: chrome inside a tile is small, a generated
+      image is not. Run the real function. */
+const sizeSrc = inj.match(/function isTileSized\(img\) \{[\s\S]*?\n    \}/);
+ok(sizeSrc, "flowInjector defines isTileSized");
+const minPx = Number(inj.match(/const MIN_TILE_IMAGE_PX = (\d+);/)[1]);
+const isTileSized = new Function("MIN_TILE_IMAGE_PX", sizeSrc[0] + "; return isTileSized;")(minPx);
+const fakeImg = (nw, nh, rect) => ({ naturalWidth: nw, naturalHeight: nh, getBoundingClientRect: () => rect || { width: 0, height: 0 } });
+ok(isTileSized(fakeImg(1280, 720)), "a generated image passes on its natural size");
+ok(!isTileSized(fakeImg(24, 24)), "an icon does not");
+ok(isTileSized(fakeImg(0, 0, { width: 320, height: 200 })), "an unloaded image falls back to its laid-out box");
+ok(!isTileSized(fakeImg(400, 20)), "a wide thin strip is not a tile image");
+ok(/img\.addEventListener\("load"/.test(inj),
+   "an image that has not loaded yet is retried, not rejected");
 
 /* 5. The tour laid a dim layer over the notice, so on a fresh install the
       notice rendered, looked actionable, and swallowed every click. */
