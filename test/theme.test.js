@@ -36,6 +36,17 @@ for (const dir of ["Erasezo-extension", "1.1.2_0"]) {
   if (!fs.existsSync(p)) { console.log("skip (missing): " + dir); continue; }
   ok(fs.readFileSync(p, "utf8") === tokens, dir + "/tokens.css is in sync (run sync-design.sh)");
 }
+/* Same trap, other direction: the Control Room's source of truth is the
+   extension folder and sync-admin.sh copies it into public/. Editing the
+   public copy and then running the sync silently reverts the edit - which is
+   exactly how a contrast fix committed here once vanished on the next sync. */
+for (const f of ["admin.css", "admin.js", "admin.html"]) {
+  const a = path.join(root, "Erasezo-extension", f), b = path.join(web, "public", f);
+  if (!fs.existsSync(a) || !fs.existsSync(b)) { console.log("skip (missing): " + f); continue; }
+  ok(fs.readFileSync(a, "utf8") === fs.readFileSync(b, "utf8"),
+     "public/" + f + " matches the extension copy (edit there, run sync-admin.sh)");
+}
+
 const themeA = path.join(root, "Erasezo-extension/assets/theme.css");
 const themeB = path.join(root, "1.1.2_0/assets/theme.css");
 if (fs.existsSync(themeA) && fs.existsSync(themeB)) {
