@@ -1,0 +1,284 @@
+/* Erasezo sidepanel theme.
+ *
+ * The panel is a compiled Tailwind build, so this layer re-skins it from the
+ * outside rather than editing the bundle: it remaps the handful of colour
+ * classes the build actually uses onto the shared tokens, then restyles the
+ * controls. Loaded AFTER the Tailwind sheet, so plain specificity is enough
+ * and there is no !important arms race except where Tailwind's own utility
+ * would otherwise win.
+ *
+ * Why re-skin rather than rewrite: the bundle drives upload, detection,
+ * preview, video and credits. Its appearance is worth changing; its behaviour
+ * is working, and rebuilding it to move a border would be trading a real
+ * regression risk for a cosmetic one.
+ */
+
+/* ---- the bundle's own variables --------------------------------------
+   The compiled sidepanel ships a full design system of its own — ~20 colour
+   variables plus a second dark-mode block. Left alone it is a second palette
+   competing with the shared tokens, which is how one product ends up looking
+   like two. Rebinding those variables here re-skins every screen the bundle
+   renders, including the ones this pass never opened, and it does it without
+   touching the build.
+
+   The selector list matters: the bundle's dark block is
+   `:root:not([data-theme="light"])` (specificity 0,2,0), so a plain `:root`
+   here would lose to it in dark mode. Matching its shape — and coming later
+   in the cascade — means these win in all three states. Mode switching itself
+   stays in tokens.css; every value below is just a pointer. */
+:root,
+:root:not([data-theme="light"]),
+:root[data-theme="dark"] {
+  --color-primary:        var(--ez-accent);
+  --color-primary-hover:  var(--ez-accent-hover);
+  --color-primary-dark:   var(--ez-accent-hover);
+  --color-secondary:      var(--ez-accent-text);
+
+  --color-bg-light:       var(--ez-bg);
+  --color-bg-card:        var(--ez-surface);
+  --color-bg-section:     var(--ez-surface-2);
+  --color-bg-hover:       var(--ez-surface-3);
+
+  --color-text-primary:   var(--ez-ink);
+  --color-text-dark:      var(--ez-ink);
+  --color-text-secondary: var(--ez-ink-soft);
+  --color-text-muted:     var(--ez-ink-faint);
+  --color-text-light:     var(--ez-ink-faint);
+
+  --color-success:        var(--ez-good);
+  --color-error:          var(--ez-crit);
+  --color-warning:        var(--ez-warn);
+  --color-badge:          var(--ez-crit);
+
+  --color-border-light:   var(--ez-border);
+  --color-border-subtle:  var(--ez-border);
+
+  --gradient-primary:       linear-gradient(135deg, var(--ez-accent) 0%, var(--ez-accent-hover) 100%);
+  --gradient-primary-hover: linear-gradient(135deg, var(--ez-accent-hover) 0%, var(--ez-accent-hover) 100%);
+
+  --shadow-card:       var(--ez-shadow-sm);
+  --shadow-card-hover: var(--ez-shadow-lg);
+  --shadow-btn:        var(--ez-shadow-sm);
+  --shadow-tab:        var(--ez-shadow-sm);
+
+  --radius-card:  var(--ez-r-lg);
+  --radius-input: var(--ez-r-sm);
+  --font-family:  var(--ez-font);
+}
+
+/* ---- surfaces -------------------------------------------------------- */
+body, .erasio-container { background: var(--ez-bg); color: var(--ez-ink); font-family: var(--ez-font); }
+.bg-\[\#f8fafc\], .dark\:bg-\[\#0f1117\] { background-color: var(--ez-bg) !important; }
+.bg-white, .dark\:bg-\[\#1a1a2e\] { background-color: var(--ez-surface) !important; }
+.bg-gray-50, .bg-slate-50 { background-color: var(--ez-surface-2) !important; }
+.bg-gray-100 { background-color: var(--ez-surface-2) !important; }
+.bg-gray-800, .bg-gray-900 { background-color: var(--ez-surface-2) !important; }
+
+/* ---- text ------------------------------------------------------------ */
+.text-gray-900, .text-gray-100 { color: var(--ez-ink) !important; }
+.text-gray-800, .text-gray-700, .text-gray-200, .text-gray-300 { color: var(--ez-ink-soft) !important; }
+.text-gray-600, .text-gray-500, .text-gray-400 { color: var(--ez-ink-faint) !important; }
+
+/* ---- lines ----------------------------------------------------------- */
+.border-gray-200, .border-gray-300, .border-gray-700, .border-gray-800 { border-color: var(--ez-border) !important; }
+
+/* ---- accent ---------------------------------------------------------- */
+.text-\[\#38bdf8\], .hover\:text-\[\#38bdf8\]:hover { color: var(--ez-accent-text) !important; }
+.bg-\[\#38bdf8\], .hover\:bg-\[\#38bdf8\]:hover { background-color: var(--ez-accent) !important; color: var(--ez-accent-ink) !important; }
+.border-\[\#38bdf8\], .hover\:border-\[\#38bdf8\]:hover, .focus\:border-\[\#38bdf8\]:focus { border-color: var(--ez-accent) !important; }
+/* One more of the original teal that outlived the rebrand. */
+.bg-\[\#0fc5bf\] { background-color: var(--ez-accent) !important; }
+
+/* The bundle's solid-dark button (Save settings, and the video panel's twin).
+   It always ships with `text-white`, which is the catch: an earlier pass mapped
+   it to the accent wash, and in light mode that is #E0F2FE — white on near-white,
+   a button you cannot read. It is a secondary action sitting beside an accent
+   primary, so it gets the secondary treatment: a raised neutral surface that
+   stays legible in both modes, with the text forced off white. */
+.bg-\[\#1c4756\], .bg-\[\#153642\], .hover\:bg-\[\#1c4756\]:hover {
+  background-color: var(--ez-surface-3) !important;
+  border: 1px solid var(--ez-border-strong);
+}
+.bg-\[\#1c4756\].text-white, .bg-\[\#153642\].text-white { color: var(--ez-ink) !important; }
+
+/* ---- header ---------------------------------------------------------- */
+.erasio-header {
+  background: var(--ez-surface);
+  border-bottom: 1px solid var(--ez-border);
+  backdrop-filter: saturate(1.1) blur(6px);
+}
+.erasio-logo { border-radius: var(--ez-r-sm); }
+
+/* ---- cards and panels ------------------------------------------------
+   Structure comes from a border with one soft lift, not a drop shadow: at
+   sidepanel width heavy shadows read as smudges. */
+.rounded-xl, .rounded-lg {
+  border-radius: var(--ez-r);
+}
+.shadow-sm { box-shadow: var(--ez-shadow-sm) !important; }
+.shadow-xl, .shadow-2xl { box-shadow: var(--ez-shadow-lg) !important; }
+
+/* ---- controls: the numeric readouts ---------------------------------
+   This is a measuring tool. A threshold, a gain, a pixel stride — each is a
+   reading, and a reading should be unmistakable as one: monospace, tabular,
+   full-contrast, so a column of them lines up and can be scanned. */
+.tabular-nums, .font-mono {
+  font-family: var(--ez-mono) !important;
+  font-variant-numeric: tabular-nums;
+  color: var(--ez-ink) !important;
+  letter-spacing: -.01em;
+}
+
+/* ---- controls: sliders ----------------------------------------------
+   The native range already paints a filled track via accent-color, and it
+   comes with the keyboard behaviour and the platform's own accessibility for
+   free. An earlier pass replaced it with a custom track and lost the fill —
+   so the value's position stopped being visible at all. This only retunes the
+   parts worth changing: our accent, a taller hit area, and a visible focus. */
+input[type=range] {
+  accent-color: var(--ez-accent);
+  width: 100%;
+  height: 20px;
+  cursor: pointer;
+}
+input[type=range]:focus-visible { outline: 2px solid var(--ez-accent); outline-offset: 3px; border-radius: var(--ez-r-pill); }
+.accent-\[\#38bdf8\] { accent-color: var(--ez-accent) !important; }
+
+/* ---- controls: selects and inputs ------------------------------------ */
+select, input[type=text], input[type=number], input[type=email], input[type=password] {
+  background: var(--ez-surface-2) !important;
+  color: var(--ez-ink) !important;
+  border: 1px solid var(--ez-border) !important;
+  border-radius: var(--ez-r-sm) !important;
+  font-family: var(--ez-font);
+}
+select:focus, input:focus { outline: none; border-color: var(--ez-accent) !important; box-shadow: var(--ez-focus); }
+
+/* ---- controls: the +/- steppers -------------------------------------- */
+button.rounded-full, button.rounded-md {
+  background: var(--ez-surface-2);
+  border: 1px solid var(--ez-border);
+  color: var(--ez-ink-soft);
+  transition: border-color .12s ease, color .12s ease;
+}
+button.rounded-full:hover, button.rounded-md:hover {
+  border-color: var(--ez-accent); color: var(--ez-accent-text);
+}
+
+/* ---- dropzone -------------------------------------------------------- */
+.border-dashed {
+  border-color: var(--ez-border-strong) !important;
+  background: var(--ez-surface-2);
+  border-radius: var(--ez-r-lg) !important;
+  transition: border-color .15s ease, background .15s ease;
+}
+.border-dashed:hover { border-color: var(--ez-accent) !important; background: var(--ez-accent-wash); }
+@media (prefers-reduced-motion: reduce) { .border-dashed { transition: none; } }
+
+/* ---- footer action bar ----------------------------------------------- */
+.erasio-container > footer,
+.erasio-container > div:last-child {
+  border-top: 1px solid var(--ez-border);
+  background: var(--ez-surface);
+}
+
+/* ---- focus, everywhere ----------------------------------------------- */
+:where(button, a, select, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--ez-accent);
+  outline-offset: 2px;
+}
+
+/* ---- the onboarding tour --------------------------------------------- */
+.erasio-tour-bubble { background: var(--ez-surface); border: 1px solid var(--ez-border); border-radius: var(--ez-r-lg); box-shadow: var(--ez-shadow-lg); }
+.erasio-tour-title { color: var(--ez-ink); }
+.erasio-tour-body { color: var(--ez-ink-soft); }
+.erasio-tour-step, .erasio-tour-skip { color: var(--ez-ink-faint); }
+.erasio-tour-dot { background: var(--ez-border-strong); }
+.erasio-tour-dot[data-on="true"], .erasio-tour-dot.is-on { background: var(--ez-accent); }
+
+/* ---- the Google Flow notice -----------------------------------------
+   Shipped in a hardcoded orange: rgb(249 115 22) behind white text is 3.0:1,
+   under the 4.5:1 floor, and the surrounding dark rules only fire when the
+   panel has explicitly been set to dark — so following the OS left the ghost
+   button with a black border on a black card. Both go through the tokens now.
+   The fill inverts between modes, so --ez-warn-ink carries the matching
+   foreground rather than a fixed white. */
+.flow-google-banner {
+  background: var(--ez-warn-wash);
+  border: 1px solid color-mix(in srgb, var(--ez-warn) 45%, transparent);
+  color: var(--ez-ink);
+  border-radius: var(--ez-r);
+}
+.flow-google-banner-icon { color: var(--ez-warn); }
+.flow-google-banner-btn-primary,
+.flow-google-banner-btn-primary:hover { background: var(--ez-warn); color: var(--ez-warn-ink); }
+.flow-google-banner-btn-ghost {
+  color: var(--ez-ink-soft);
+  border: 1px solid var(--ez-border-strong);
+}
+.flow-google-banner-btn-ghost:hover { color: var(--ez-ink); background: var(--ez-surface-2); }
+.flow-google-banner-close { color: var(--ez-ink-faint); }
+.flow-google-banner-close:hover { color: var(--ez-ink); background: var(--ez-surface-2); }
+
+/* ---- the account block ----------------------------------------------
+   Upgrade and Logout shipped as the same button. They are not the same
+   button: one is the thing the product wants you to do, the other is the way
+   out. The bundle gives them no distinguishing hook, so the icon each already
+   carries is the selector. */
+.settings-group .btn-secondary:has(.lucide-sparkles) {
+  background: var(--ez-accent);
+  border-color: var(--ez-accent);
+  color: var(--ez-accent-ink);
+}
+.settings-group .btn-secondary:has(.lucide-sparkles):hover {
+  background: var(--ez-accent-hover);
+  border-color: var(--ez-accent-hover);
+  color: var(--ez-accent-ink);
+}
+.settings-group .btn-secondary:has(.lucide-log-out) { color: var(--ez-ink-soft); }
+.settings-group .btn-secondary:has(.lucide-log-out):hover {
+  border-color: var(--ez-crit); color: var(--ez-crit); background: var(--ez-crit-wash);
+}
+/* The identity itself reads as a record, not as a form label. */
+.settings-group > .settings-label-group:first-of-type {
+  background: var(--ez-surface-2);
+  border: 1px solid var(--ez-border);
+  border-radius: var(--ez-r);
+  padding: 12px 14px;
+}
+
+/* ---- the credit-status bar and the upsell -----------------------------
+   Found by sweeping the stylesheet rather than the screen: these render when
+   credits run low or run out, which is not a state the panel was sitting in.
+   Two faults, the same two the Google Flow notice had. The colours were
+   hardcoded amber and red (white on rgb(217 119 6) is 3.19:1), and the dark
+   variants keyed on [data-theme="dark"] alone — so following the OS left
+   rgb(146 64 14) text, chosen for a pale amber wash, sitting on a dark one.
+
+   The bar's own prose takes --ez-ink (16:1) and the semantic colour goes to
+   the emphasis and the CTA, which reads better and keeps the body text well
+   clear of the 4.5 line rather than a hair over it. */
+.cs-bar-warn  { border-color: color-mix(in srgb, var(--ez-warn) 45%, transparent); background: var(--ez-warn-wash); color: var(--ez-ink); }
+.cs-bar-error { border-color: color-mix(in srgb, var(--ez-crit) 45%, transparent); background: var(--ez-crit-wash); color: var(--ez-ink); }
+.cs-bar-warn .cs-text strong  { color: var(--ez-warn); }
+.cs-bar-error .cs-text strong { color: var(--ez-crit); }
+.cs-bar-warn .cs-cta  { border-color: var(--ez-warn); color: var(--ez-warn); }
+.cs-bar-error .cs-cta { border-color: var(--ez-crit); color: var(--ez-crit); }
+.cs-bar-warn .cs-cta:hover  { background: var(--ez-warn); color: var(--ez-warn-ink); }
+.cs-bar-error .cs-cta:hover { background: var(--ez-crit); color: var(--ez-crit-ink); }
+
+/* The neutral CTAs fill with the accent on hover, and white is only the right
+   foreground for that in one of the two modes. */
+.cs-bar .cs-cta:hover, .upsell-cta:hover { background: var(--ez-accent); color: var(--ez-accent-ink); }
+
+/* rgba(0,0,0,.04) is a hover you cannot see on a dark surface. */
+.cs-bar .cs-cta-ghost:hover,
+.cs-bar .cs-cta-disabled,
+.cs-bar .cs-cta-disabled:hover,
+.upsell-close:hover { background: var(--ez-surface-2); }
+
+.disabled-banner {
+  background: var(--ez-warn-wash);
+  border-color: color-mix(in srgb, var(--ez-warn) 45%, transparent);
+  color: var(--ez-ink);
+}

@@ -18,8 +18,12 @@ for dir in "$EXT" "$EXT2"; do
   cp "$WEB/public/tokens.css" "$dir/tokens.css"
   echo "tokens -> $dir/tokens.css"
 done
-# theme.css is the sidepanel's own; keep the two extension folders identical.
-if [ -f "$EXT/assets/theme.css" ] && [ -d "$EXT2/assets" ]; then
-  cp "$EXT/assets/theme.css" "$EXT2/assets/theme.css"
-  echo "theme  -> $EXT2/assets/theme.css"
-fi
+# theme.css re-skins the sidepanel, so it lives in the extension at runtime --
+# but the extension folders are not under version control, and design work that
+# exists in exactly one unbacked copy is design work waiting to be lost. The
+# tracked original is public/theme.css and it fans out the same way tokens do.
+for dir in "$EXT" "$EXT2"; do
+  [ -d "$dir/assets" ] || continue
+  cp "$WEB/public/theme.css" "$dir/assets/theme.css"
+  echo "theme  -> $dir/assets/theme.css"
+done

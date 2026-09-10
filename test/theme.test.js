@@ -47,18 +47,17 @@ for (const f of ["admin.css", "admin.js", "admin.html"]) {
      "public/" + f + " matches the extension copy (edit there, run sync-admin.sh)");
 }
 
-const themeA = path.join(root, "Erasezo-extension/assets/theme.css");
-const themeB = path.join(root, "1.1.2_0/assets/theme.css");
-if (fs.existsSync(themeA) && fs.existsSync(themeB)) {
-  ok(fs.readFileSync(themeA, "utf8") === fs.readFileSync(themeB, "utf8"),
-     "both extension folders carry the same theme.css");
+const theme = fs.readFileSync(path.join(web, "public/theme.css"), "utf8");
+for (const dir of ["Erasezo-extension", "1.1.2_0"]) {
+  const p = path.join(root, dir, "assets/theme.css");
+  if (!fs.existsSync(p)) { console.log("skip (missing): " + dir); continue; }
+  ok(fs.readFileSync(p, "utf8") === theme, dir + "/assets/theme.css is in sync (run sync-design.sh)");
 }
 
 /* text-white is baked into the bundle's markup for this button, so whatever
    fill it gets has to stay dark enough to carry white — the accent wash is
    #E0F2FE in light mode, which made the label disappear. */
-if (fs.existsSync(themeA)) {
-  const theme = fs.readFileSync(themeA, "utf8");
+{
   const rule = theme.match(/\.bg-\\\[\\#153642\\\][^{]*\{[^}]*\}/);
   ok(rule && !/accent-wash/.test(rule[0]),
      "the solid-dark button is not filled with the accent wash");
