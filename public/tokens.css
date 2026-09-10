@@ -1,0 +1,124 @@
+/* Erasezo design tokens — the single source of truth for all three surfaces:
+ * the extension sidepanel, the account dashboard and the Control Room.
+ *
+ * Edit this file only. sync-design.sh copies it to the extension; nothing else
+ * should define a raw colour. A value that appears in one surface and not the
+ * others is how three products that share a name end up looking like three
+ * products.
+ *
+ * The product is a precision tool — thresholds, alphas, pixel offsets — so the
+ * system leans instrument rather than marketing: cool neutrals, one confident
+ * accent, elevation from a border plus a whisper of shadow rather than a drop
+ * shadow, and a monospace face reserved for numbers so a reading is always
+ * recognisable as a reading.
+ *
+ * Both modes are defined here and follow the OS. Every pairing below clears
+ * WCAG AA for its size: ink-faint is the floor at ~5:1 on its own surface, and
+ * text on the accent is dark-on-light in both modes rather than white, which
+ * would fail.
+ */
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces, back to front */
+  --ez-bg:        #F5F8FC;
+  --ez-surface:   #FFFFFF;
+  --ez-surface-2: #EFF4FA;
+  --ez-surface-3: #E4ECF5;
+
+  /* Text, most to least prominent */
+  --ez-ink:       #0E1726;
+  --ez-ink-soft:  #46586F;
+  --ez-ink-faint: #5A6B85;
+
+  /* Lines */
+  --ez-border:       #DCE6F1;
+  --ez-border-strong:#C3D3E5;
+
+  /* One accent. -ink is what sits ON the accent; -wash is the accent at rest. */
+  --ez-accent:      #0369A1;
+  --ez-accent-hover:#075985;
+  --ez-accent-ink:  #FFFFFF;
+  --ez-accent-text: #0369A1;
+  --ez-accent-wash: #E0F2FE;
+
+  /* Semantic. Same rule: -text is the readable form, plain is the fill. */
+  --ez-good:      #12805C;   --ez-good-wash: #DCFCE7;
+  --ez-warn:      #A65B00;   --ez-warn-wash: #FEF3C7;
+  --ez-crit:      #C0362B;   --ez-crit-wash: #FEE2E2;
+
+  /* Elevation. Borders carry the structure; shadows only lift what floats. */
+  --ez-shadow-sm: 0 1px 2px rgb(14 23 38 / .06);
+  --ez-shadow:    0 1px 2px rgb(14 23 38 / .05), 0 10px 26px rgb(14 23 38 / .07);
+  --ez-shadow-lg: 0 24px 60px rgb(14 23 38 / .16);
+
+  /* Geometry. One step per role, so nothing is "nearly" the same radius. */
+  --ez-r-sm: 8px;
+  --ez-r:    12px;
+  --ez-r-lg: 16px;
+  --ez-r-pill: 999px;
+
+  /* Type. Numbers get the mono face — a reading should look like a reading. */
+  --ez-font: "DM Sans", "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ez-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --ez-focus: 0 0 0 3px color-mix(in srgb, var(--ez-accent) 35%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ez-theme="light"]) {
+    --ez-bg:        #080E18;
+    --ez-surface:   #0F1826;
+    --ez-surface-2: #0B1320;
+    --ez-surface-3: #162234;
+
+    --ez-ink:       #E7EEF9;
+    --ez-ink-soft:  #A5B5CB;
+    --ez-ink-faint: #7F90A8;
+
+    --ez-border:       #1C2A3E;
+    --ez-border-strong:#2A3B53;
+
+    --ez-accent:      #38BDF8;
+    --ez-accent-hover:#7DD3FC;
+    --ez-accent-ink:  #052A3F;
+    --ez-accent-text: #7DD3FC;
+    --ez-accent-wash: #0A2334;
+
+    --ez-good:      #3DD68C;   --ez-good-wash: #06251A;
+    --ez-warn:      #E0A545;   --ez-warn-wash: #2A1F08;
+    --ez-crit:      #F0796C;   --ez-crit-wash: #2C1210;
+
+    --ez-shadow-sm: 0 1px 2px rgb(0 0 0 / .4);
+    --ez-shadow:    0 1px 2px rgb(0 0 0 / .35), 0 12px 30px rgb(0 0 0 / .45);
+    --ez-shadow-lg: 0 28px 68px rgb(0 0 0 / .6);
+  }
+}
+
+/* An explicit choice always wins over the OS. */
+:root[data-ez-theme="dark"] {
+  --ez-bg:        #080E18;
+  --ez-surface:   #0F1826;
+  --ez-surface-2: #0B1320;
+  --ez-surface-3: #162234;
+  --ez-ink:       #E7EEF9;
+  --ez-ink-soft:  #A5B5CB;
+  --ez-ink-faint: #7F90A8;
+  --ez-border:       #1C2A3E;
+  --ez-border-strong:#2A3B53;
+  --ez-accent:      #38BDF8;
+  --ez-accent-hover:#7DD3FC;
+  --ez-accent-ink:  #052A3F;
+  --ez-accent-text: #7DD3FC;
+  --ez-accent-wash: #0A2334;
+  --ez-good: #3DD68C; --ez-good-wash: #06251A;
+  --ez-warn: #E0A545; --ez-warn-wash: #2A1F08;
+  --ez-crit: #F0796C; --ez-crit-wash: #2C1210;
+  --ez-shadow-sm: 0 1px 2px rgb(0 0 0 / .4);
+  --ez-shadow:    0 1px 2px rgb(0 0 0 / .35), 0 12px 30px rgb(0 0 0 / .45);
+  --ez-shadow-lg: 0 28px 68px rgb(0 0 0 / .6);
+}
+
+/* A class that sets `display` outranks the user agent's [hidden], so anything
+   hidden by the attribute would still render without this. */
+[hidden] { display: none !important; }

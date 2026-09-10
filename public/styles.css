@@ -1,8 +1,14 @@
 :root{
-  --bg:#f0f7ff; --surface:#fff; --surface-2:#f2f8ff; --ink:#0b2536; --soft:#42566a;
-  --faint:#7488a0; --border:#d6e6f5; --accent:#38BDF8; --hover:#0EA5E9; --tint:#BAE6FD;
-  --inkblue:#0369A1; --good:#1f9d6b; --crit:#c0453a;
-  --shadow:0 1px 2px rgba(11,37,54,.05),0 12px 30px rgba(11,37,54,.08);
+  /* Every value here comes from tokens.css. Keeping the local names means the
+     rules below did not all have to change, but there is now one place a colour
+     is decided — three surfaces each owning a palette is how a product ends up
+     looking like three products. */
+  --bg:var(--ez-bg); --surface:var(--ez-surface); --surface-2:var(--ez-surface-2);
+  --ink:var(--ez-ink); --soft:var(--ez-ink-soft); --faint:var(--ez-ink-faint);
+  --border:var(--ez-border); --accent:var(--ez-accent); --hover:var(--ez-accent-hover);
+  --tint:var(--ez-accent-wash); --inkblue:var(--ez-accent-text);
+  --good:var(--ez-good); --crit:var(--ez-crit);
+  --shadow:var(--ez-shadow);
 }
 *{box-sizing:border-box}
 /* A class that sets `display` outranks the user-agent's [hidden]{display:none},
@@ -20,7 +26,7 @@ h2{margin:0 0 4px;font-size:1.35rem}.sub{color:var(--soft);font-size:.9rem;margi
 label{display:block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);margin:14px 0 6px}
 input{width:100%;padding:12px 14px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;color:var(--ink);font:400 .95rem inherit}
 input:focus{outline:2px solid var(--accent);border-color:var(--accent)}
-.btn{width:100%;margin-top:18px;padding:13px;border:0;border-radius:12px;background:var(--accent);color:#062a3d;font:700 1rem inherit;cursor:pointer}
+.btn{width:100%;margin-top:18px;padding:13px;border:0;border-radius:12px;background:var(--accent);color:var(--ez-accent-ink);font:700 1rem inherit;cursor:pointer}
 .btn:hover{background:var(--hover)}.btn:disabled{opacity:.6;cursor:default}
 .btn.ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--border)}
 .google{width:100%;margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--ink);font:600 .95rem inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;text-decoration:none}
@@ -32,19 +38,6 @@ input:focus{outline:2px solid var(--accent);border-color:var(--accent)}
 .msg{margin-top:12px;padding:10px 12px;border-radius:10px;font-size:.85rem;display:none}
 .msg.err{display:block;background:rgba(192,69,58,.1);border:1px solid rgba(192,69,58,.4);color:var(--crit)}
 .msg.ok{display:block;background:rgba(31,157,107,.1);border:1px solid rgba(31,157,107,.4);color:var(--good)}
-/* ---------- dark mode ----------
-   The tokens above are the light palette; only the values change here, so
-   every rule that uses them follows automatically. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg:#07131d; --surface:#0e1e2b; --surface-2:#0b1a26; --ink:#e7f2fb;
-    --soft:#a7bccf; --faint:#6f869c; --border:#1c3040; --accent:#38BDF8;
-    --hover:#7DD3FC; --tint:#0C2A3A; --inkblue:#7DD3FC;
-    --good:#4bcc92; --crit:#e8776b;
-    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 34px rgba(0,0,0,.4);
-  }
-}
-
 /* ---------- dashboard shell ---------- */
 .app-body{background:var(--bg)}
 .app{display:grid;grid-template-columns:248px 1fr;min-height:100vh}
@@ -80,7 +73,7 @@ main{min-width:0;padding-bottom:64px}
 .note{margin-top:12px;padding:10px 12px;border-radius:10px;background:var(--surface-2);border:1px solid var(--border);color:var(--soft);font-size:.85rem}
 .grid2{display:grid;gap:18px;grid-template-columns:1fr 1fr}
 .row{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}
-.btn-sm{padding:9px 15px;border:0;border-radius:10px;background:var(--accent);color:#062a3d;font:700 .88rem inherit;cursor:pointer;text-decoration:none;display:inline-block}
+.btn-sm{padding:9px 15px;border:0;border-radius:10px;background:var(--accent);color:var(--ez-accent-ink);font:700 .88rem inherit;cursor:pointer;text-decoration:none;display:inline-block}
 .btn-sm:hover{background:var(--hover)}
 .btn-sm.ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--border)}
 .btn-sm:disabled{opacity:.6;cursor:default}
