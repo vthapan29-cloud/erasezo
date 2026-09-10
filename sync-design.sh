@@ -17,6 +17,10 @@ for dir in "$EXT" "$EXT2"; do
   # resolves in both contexts.
   cp "$WEB/public/tokens.css" "$dir/tokens.css"
   echo "tokens -> $dir/tokens.css"
+  # The Control Room is served from both roots and asks for /mark.png, so the
+  # brand mark has to sit at the same path in each.
+  cp "$WEB/public/mark.png" "$dir/mark.png"
+  echo "mark   -> $dir/mark.png"
 done
 # theme.css re-skins the sidepanel, so it lives in the extension at runtime --
 # but the extension folders are not under version control, and design work that

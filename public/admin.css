@@ -26,7 +26,10 @@ a{color:var(--accent-text)}
 /* Sidebar */
 aside{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);padding:20px 14px;display:flex;flex-direction:column;gap:4px}
 .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 16px}
-.brand .logo{width:28px;height:28px;border-radius:8px;background:var(--accent-wash);border:1px solid var(--accent);display:grid;place-items:center;font-size:15px}
+.brand .logo{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;overflow:hidden}
+/* The mark brings its own ground and corners; a tinted tile behind it
+   would just be a second frame. */
+.brand .logo img{width:100%;height:100%;object-fit:contain;display:block}
 .brand b{font-family:"Chivo";font-weight:900;font-size:1.02rem}
 .brand span{display:block;font-family:"IBM Plex Mono";font-size:10px;color:var(--ink-faint);letter-spacing:.08em}
 nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;background:none;border:0;border-radius:9px;padding:9px 11px;color:var(--ink-soft);font:500 .9rem "IBM Plex Sans",sans-serif;cursor:pointer}

@@ -96,6 +96,28 @@ ok(!isTileSized(fakeImg(400, 20)), "a wide thin strip is not a tile image");
 ok(/img\.addEventListener\("load"/.test(inj),
    "an image that has not loaded yet is retried, not rejected");
 
+/* 4c. The image path used to hard-require [data-tile-id] on the container —
+      a Google-internal attribute, so a rename takes the button with it. It is
+      preferred now, not required: anything that frames one piece of media
+      qualifies, and a grid of them does not. */
+const tileLikeSrc = inj.match(/function isTileLike\(host, media\) \{[\s\S]*?\n    \}/);
+ok(tileLikeSrc, "flowInjector defines isTileLike");
+const isTileLike = new Function("MIN_TILE_IMAGE_PX", "TILE_SELECTOR", "window",
+  tileLikeSrc[0] + "; return isTileLike;")(minPx, "[data-tile-id]", { innerWidth: 1440, innerHeight: 900 });
+const box = (w, h, opts = {}) => ({
+  matches: (sel) => !!opts.isFlowTile && sel === "[data-tile-id]",
+  getBoundingClientRect: () => ({ width: w, height: h }),
+  querySelectorAll: () => ({ length: opts.mediaCount === undefined ? 1 : opts.mediaCount }),
+});
+ok(isTileLike(box(10, 10, { isFlowTile: true })), "Flow's own tile qualifies on its name alone");
+ok(isTileLike(box(320, 200)), "a container framing one image qualifies without the attribute");
+ok(!isTileLike(box(40, 40)), "something too small to hold a generated image does not");
+ok(!isTileLike(box(1440, 900)), "the whole viewport is not a tile");
+ok(!isTileLike(box(660, 300, { mediaCount: 3 })), "a grid of images is not one tile");
+ok(!isTileLike(null), "no container at all is not a tile");
+ok(/document\.querySelectorAll\("img"\)\.forEach\(tryAttachImage\)/.test(inj),
+   "the initial scan is not scoped to the tile attribute either");
+
 /* 5. The tour laid a dim layer over the notice, so on a fresh install the
       notice rendered, looked actionable, and swallowed every click. */
 const theme = fs.readFileSync(path.join(__dirname, "../public/theme.css"), "utf8");

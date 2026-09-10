@@ -19,7 +19,11 @@ a{color:var(--inkblue)}
 .wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
 .card{width:100%;max-width:440px;background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}
 .head{display:flex;align-items:center;gap:11px;padding:20px 24px;border-bottom:1px solid var(--border)}
-.logo{width:34px;height:34px;border-radius:9px;background:var(--tint);border:1px solid var(--accent);display:grid;place-items:center;color:var(--inkblue);font-weight:900}
+.logo{width:34px;height:34px;border-radius:9px;background:var(--tint);border:1px solid var(--accent);display:grid;place-items:center;color:var(--inkblue);font-weight:900;overflow:hidden}
+/* The mark is a finished rounded-square icon with its own ground, so the
+   tinted tile and border underneath it would only be a second frame. */
+.logo:has(img){background:none;border:0}
+.logo img{width:100%;height:100%;object-fit:contain;display:block}
 .head b{font-size:1.15rem}.head span{display:block;font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em}
 .body{padding:24px}
 h2{margin:0 0 4px;font-size:1.35rem}.sub{color:var(--soft);font-size:.9rem;margin:0 0 18px}

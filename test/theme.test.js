@@ -68,4 +68,49 @@ for (const dir of ["Erasezo-extension", "1.1.2_0"]) {
      "the solid-dark button is not filled with the accent wash");
 }
 
+/* The brand mark. The extension shipped the old teal Erasio icon at every
+   size, the login card drew the letter "L", and the dashboard drew "E" — a
+   placeholder outlives the day it was written unless something checks. */
+const png = (file) => {
+  const b = fs.readFileSync(file);
+  // IHDR is the first chunk, so width and height sit at a fixed offset.
+  return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), bytes: b.length };
+};
+
+const extRoot = path.join(root, "Erasezo-extension");
+if (!fs.existsSync(extRoot)) { console.log("skip: extension folder not present"); }
+else {
+  const man = JSON.parse(fs.readFileSync(path.join(extRoot, "manifest.json"), "utf8"));
+  for (const size of [16, 32, 48, 128]) {
+    const rel = "icons/icon" + size + ".png";
+    ok(man.icons[size] === rel, "manifest declares the " + size + "px icon");
+    ok(man.action.default_icon && man.action.default_icon[size] === rel,
+       "the toolbar button has its own " + size + "px icon, not a rescale");
+    const d = png(path.join(extRoot, rel));
+    ok(d.w === size && d.h === size, rel + " really is " + size + "x" + size);
+  }
+  // Every size is cut from the one 128 master, so they are the same artwork.
+  const master = png(path.join(extRoot, "icons/icon128.png"));
+  const siteMark = png(path.join(web, "public/mark.png"));
+  ok(master.bytes === siteMark.bytes, "the site's mark and the extension's icon are the same file");
+
+  for (const dir of ["Erasezo-extension", "1.1.2_0"]) {
+    const p2 = path.join(root, dir, "mark.png");
+    if (!fs.existsSync(p2)) { console.log("skip (missing): " + dir + "/mark.png"); continue; }
+    // admin.html and user.html are served from the extension root and from the
+    // site root, and both ask for /mark.png.
+    ok(fs.readFileSync(p2).equals(fs.readFileSync(path.join(web, "public/mark.png"))),
+       dir + "/mark.png is in sync (run sync-design.sh)");
+  }
+}
+
+for (const [file, dir] of [["index.html", "public"], ["dashboard.html", "public"],
+                           ["admin.html", "public"], ["user.html", null]]) {
+  const p2 = dir ? path.join(web, dir, file) : path.join(root, "Erasezo-extension", file);
+  if (!fs.existsSync(p2)) { console.log("skip (missing): " + file); continue; }
+  const html = fs.readFileSync(p2, "utf8");
+  ok(/<link rel="icon"/.test(html), file + " has a favicon");
+  ok(!/<div class="logo">[A-Z]<\/div>/.test(html), file + " does not draw a letter where the mark goes");
+}
+
 console.log("\nALL THEME TESTS PASSED");
