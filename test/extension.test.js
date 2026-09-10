@@ -147,6 +147,30 @@ ok(!isTileLike(null), "no container at all is not a tile");
 ok(/document\.querySelectorAll\("img"\)\.forEach\(tryAttachImage\)/.test(inj),
    "the initial scan is not scoped to the tile attribute either");
 
+/* 4d. The guard has to run before anything can touch chrome.*, in every
+      content-script list — including the erasezo.com one, which is where the
+      invalidated-context error was actually reported. */
+for (const c of man.content_scripts) {
+  ok(c.js[0] === "contextGuard.js",
+     "contextGuard runs first on " + c.matches[0]);
+}
+ok(fs.existsSync(path.join(ext, "contextGuard.js")), "contextGuard.js ships");
+
+/* And webBridge, the file that threw, must not reach chrome.storage directly
+   any more — its four-second poll was the thing filling the error page. */
+const wb = fs.readFileSync(path.join(ext, "page/webBridge.js"), "utf8");
+ok(!/chrome\.storage\.local\.(get|set|remove)\(/.test(wb),
+   "webBridge routes every storage call through its own guard");
+ok(/clearInterval\(pollTimer\)/.test(wb), "and stops polling once the context is gone");
+ok(/__erasezoAdmin: "stale"/.test(wb), "and says so, instead of going silent");
+
+/* Going silent is the dangerous half: the Control Room's bridge times out
+   after 800ms and falls back to localStorage, so a stale tab would look like
+   a browser with no extension and quietly mock every write. */
+const adm = fs.readFileSync(path.join(ext, "admin.js"), "utf8");
+ok(/bridgeStale/.test(adm) && /if \(bridgeStale\) \{ toast\(/.test(adm),
+   "the panel refuses to mock a write for a tab whose extension was reloaded");
+
 /* 5. The tour laid a dim layer over the notice, so on a fresh install the
       notice rendered, looked actionable, and swallowed every click. */
 const theme = fs.readFileSync(path.join(__dirname, "../public/theme.css"), "utf8");

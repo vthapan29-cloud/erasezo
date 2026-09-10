@@ -41,6 +41,20 @@
    * on the website reach the installed extension. If nothing answers (extension
    * not installed) it falls back to localStorage so the panel still works. */
   var BRIDGE_TIMEOUT_MS = 800;
+  // Set once the content script tells us its extension was reloaded out from
+  // under this tab. "Nothing answered" and "the extension is gone" both mean
+  // no bridge, but they are opposite situations: the first is a browser
+  // without Erasezo, where falling back to localStorage is the right thing;
+  // the second is a stale tab, where the same fallback would silently pretend
+  // an edit landed on an extension that never saw it.
+  var bridgeStale = false;
+  try {
+    window.addEventListener("message", function (e) {
+      if (e.source !== window || e.origin !== location.origin) return;
+      if (e.data && e.data.__erasezoAdmin === "stale") { bridgeStale = true; renderExtLink(); }
+    });
+  } catch (e) {}
+
   function bridge(op, payload) {
     return new Promise(function (res) {
       var id = "ez" + Math.random().toString(36).slice(2);
@@ -50,6 +64,7 @@
         var d = e.data;
         if (!d || d.__erasezoAdmin !== "res" || d.id !== id) return;
         settled = true; window.removeEventListener("message", onMsg);
+        if (d.data && d.data.stale) { bridgeStale = true; renderExtLink(); }
         res(d.ok ? (d.data || true) : null);
       }
       window.addEventListener("message", onMsg);
@@ -72,6 +87,9 @@
       if (HAS_CHROME) return new Promise(function (res) { chrome.storage.local.set(obj, res); });
       return bridge("set", obj).then(function (ok) {
         if (ok) return;
+        // Never mock a write for a tab whose extension has been reloaded —
+        // that is how you tune settings all afternoon against a stand-in.
+        if (bridgeStale) { toast("Erasezo was updated — reload this page to keep editing."); return; }
         var c = mockGet(); Object.assign(c, obj); mockPut(c);
       });
     },
@@ -79,6 +97,7 @@
       if (HAS_CHROME) return new Promise(function (res) { chrome.storage.local.remove(key, res); });
       return bridge("remove", key).then(function (ok) {
         if (ok) return;
+        if (bridgeStale) { toast("Erasezo was updated — reload this page to keep editing."); return; }
         var c = mockGet(); delete c[key]; mockPut(c);
       });
     }
@@ -1336,13 +1355,16 @@
   // installed extension or just this browser's localStorage — otherwise you
   // can tune settings all day and wonder why nothing changed.
   function renderExtLink() {
-    if (HAS_CHROME || bridgeLive === null) return;
+    if (HAS_CHROME || (bridgeLive === null && !bridgeStale)) return;
     var bar = document.querySelector(".topbar"); if (!bar) return;
     var p = document.getElementById("extLink");
     if (!p) { p = el("span"); p.id = "extLink"; p.className = "cloud-badge"; bar.insertBefore(p, document.getElementById("saveInd")); }
-    p.className = "cloud-badge " + (bridgeLive ? "on" : "off");
-    p.textContent = bridgeLive ? "extension connected" : "extension not detected";
-    p.title = bridgeLive
+    p.className = "cloud-badge " + (bridgeStale ? "off" : bridgeLive ? "on" : "off");
+    p.textContent = bridgeStale ? "reload this page"
+      : bridgeLive ? "extension connected" : "extension not detected";
+    p.title = bridgeStale
+      ? "Erasezo was reloaded or updated while this page was open, so this tab has lost its connection to it. Nothing you change here is reaching the extension until you reload the page."
+      : bridgeLive
       ? "Changes here are written straight to the installed Erasezo extension."
       : "No Erasezo extension answered on this page. Changes are saved in this browser only. Install/enable the extension, then reload.";
   }
