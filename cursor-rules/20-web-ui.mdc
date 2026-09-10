@@ -1,0 +1,29 @@
+---
+description: Site, dashboard and Control Room — CSP and design tokens
+globs: erasezo-web/public/**
+---
+
+**The CSP has no `unsafe-inline` in `style-src`.** A `style="..."` attribute in
+served markup is dropped without an error — four progress bars once rendered at
+100% because of it. Use a class, or a `data-` attribute with a matching CSS
+rule. Setting `element.style` from JavaScript is fine; CSP governs markup, not
+CSSOM. Do not weaken the header in `server.js` to make something work.
+
+**Colours come from `tokens.css` only.** Two traps:
+
+- The dark palette is written twice (a media query and an attribute selector
+  cannot share a rule). Change one, change both — a test compares them.
+- `--ez-accent-ink` is *what sits on the accent fill*; `--ez-accent-text` is
+  *the accent used as text on a neutral ground*. Opposites. Same for
+  `--ez-crit` / `--ez-crit-ink`.
+
+**Verify contrast, don't estimate it** — measured against the composited
+background, in both themes, at desktop and 390px. Let a theme change settle
+before measuring or you catch a half-applied frame and get failures that aren't
+real.
+
+**Nothing invented.** No testimonials, no user counts, no competitor claims.
+Prices are fetched from `/api/plans`, never typed into markup.
+
+`admin.*` here is the only copy of the Control Room — it is deliberately not in
+the extension package.

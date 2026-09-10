@@ -1,0 +1,29 @@
+---
+description: Express server — money paths, auth, tests
+globs: erasezo-web/server.js,erasezo-web/db.js,erasezo-web/test/**
+---
+
+**Credits are spent in one statement:** `UPDATE ... WHERE credit_balance >= n`.
+The guard lives in the SQL so it is testable — a test fires two concurrent
+spends at a single credit. Don't move that check into JavaScript.
+
+**Entitlement resolves in one order:** `users.daily_quota` → the active
+subscription's plan → free. Whatever the Control Room displays must be the
+number the server enforces; it once showed a Pro subscriber "15/day" while the
+server allowed 500.
+
+**Razorpay.** `notes.user_id` on the subscription comes from the session, never
+the request body — it is how the webhook matches a payment to an account. The
+webhook verifies HMAC over the **raw body** and records the event id so a retry
+is a no-op.
+
+**Auth.** Users get `erasezo_token` (httpOnly, SameSite=Lax); the extension
+worker uses `Authorization: Bearer` because it is cross-origin. Admin is a
+*separate* `erasezo_admin` cookie with an `adm` claim, minted only after
+password and TOTP. `adminAuth` re-reads `is_admin` and `disabled` from the
+database on every request, never from the token.
+
+**Tests** are plain Node with `assert` — no framework, no fixtures. Postgres is
+`pg-mem` via `USE_PGMEM=1`, which each test sets itself. Note pg-mem cannot do
+correlated subqueries in a select list; use aggregate derived-table joins.
+Run everything with `npm test` from `erasezo-web/`.

@@ -1,0 +1,28 @@
+---
+description: Chrome extension (MV3) — sync, context guard, Flow DOM
+globs: Erasezo-extension/**,1.1.2_0/**
+---
+
+**Edit `Erasezo-extension/`, then run `npm --prefix erasezo-web run sync`.**
+`1.1.2_0/` is a mirror Chrome loads; editing it directly is reverted by the next
+sync, and `test/extension.test.js` fails when the two drift.
+
+**A content script outlives its extension.** After a reload, `chrome.storage`
+and `chrome.runtime` still exist as objects, so an existence check passes and
+the call throws `Extension context invalidated`. Only `chrome.runtime.id`
+disappears. `contextGuard.js` runs first in both content-script lists and wraps
+the entry points — route new `chrome.*` calls through it rather than guarding
+them one by one.
+
+**`page/flowInjector.js` — anything Google-owned is a preference, not a
+requirement.** Media URLs have exactly one definition (`MEDIA_ENDPOINT`) covering
+all three shapes Flow has served; don't write the pattern a second time. Tile
+containers list Google's element names with `isTileLike()` as the structural
+fallback, because the current Angular build dropped `data-tile-id` entirely.
+
+Debugging a missing tile button: run `__erasioFlowDiag()` in the Flow tab's
+console — it names which of the five gates rejected each tile.
+
+Manifest facts worth not breaking: `contextGuard.js` must stay first in every
+`content_scripts.js` array, `options_page` is `user.html` (not the admin panel),
+and both `labs.google` and `flow.google.com` are supported.

@@ -1,0 +1,17 @@
+---
+description: Erasezo project context — read before any edit
+alwaysApply: true
+---
+
+Read `AGENTS.md` at the workspace root first. It carries the rules that are not
+visible from the code, and most of them fail silently when broken.
+
+The short version:
+
+- Three folders. `erasezo-web/` is the server and site. `Erasezo-extension/` is
+  the extension and is where you edit. `1.1.2_0/` is a mirror — never edit it.
+- After any extension change: `npm --prefix erasezo-web run sync`
+- Tests: `npm --prefix erasezo-web test` (14 suites, no real database)
+- Never hardcode a colour — everything comes from `public/tokens.css`.
+- Never hardcode a price — the site reads `/api/plans`.
+- Don't add a dependency, or a control that doesn't do anything.

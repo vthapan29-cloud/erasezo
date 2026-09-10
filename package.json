@@ -2,13 +2,16 @@
   "name": "erasezo-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Erasezo dashboard + API — Node/Express + PostgreSQL (Railway).",
+  "description": "Erasezo dashboard + API \u2014 Node/Express + PostgreSQL (Railway).",
   "type": "commonjs",
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node test/auth.test.js"
+    "test": "for f in test/*.test.js; do node \"$f\" || exit 1; done && echo \"\\nall suites passed\"",
+    "sync": "sh sync-design.sh && sh sync-ext.sh"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

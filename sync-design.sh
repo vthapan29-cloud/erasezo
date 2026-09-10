@@ -31,3 +31,16 @@ for dir in "$EXT" "$EXT2"; do
   cp "$WEB/public/theme.css" "$dir/assets/theme.css"
   echo "theme  -> $dir/assets/theme.css"
 done
+
+# The agent notes and the Cursor rules describe both repos, so their tracked
+# home is here — the workspace root above is not under version control, and a
+# handoff that exists on one disk is the thing it warns about. Cursor reads
+# them from the root, so they are copied out.
+ROOT="$WEB/.."
+cp "$WEB/AGENTS.md" "$ROOT/AGENTS.md"
+echo "agents -> $ROOT/AGENTS.md"
+if [ -d "$WEB/cursor-rules" ]; then
+  mkdir -p "$ROOT/.cursor/rules"
+  cp "$WEB"/cursor-rules/*.mdc "$ROOT/.cursor/rules/"
+  echo "rules  -> $ROOT/.cursor/rules/"
+fi

@@ -111,4 +111,25 @@ for (const [file, dir] of [["index.html", "public"], ["dashboard.html", "public"
   ok(!/<div class="logo">[A-Z]<\/div>/.test(html), file + " does not draw a letter where the mark goes");
 }
 
+/* The agent notes and the Cursor rules live in this repo and are copied to the
+   workspace root, which is not under version control. Editing the root copy is
+   the same trap as editing the mirrored extension folder: the next sync eats
+   it, and this is the file that warns about that trap. */
+const wsRoot = path.join(root);
+for (const [src, dst] of [[path.join(web, "AGENTS.md"), path.join(wsRoot, "AGENTS.md")]]) {
+  if (!fs.existsSync(src)) { console.log("skip (missing): AGENTS.md"); continue; }
+  if (!fs.existsSync(dst)) { console.log("skip: no workspace copy yet"); continue; }
+  ok(fs.readFileSync(src, "utf8") === fs.readFileSync(dst, "utf8"),
+     "AGENTS.md at the workspace root matches the tracked copy (run sync-design.sh)");
+}
+const rulesSrc = path.join(web, "cursor-rules");
+const rulesDst = path.join(wsRoot, ".cursor/rules");
+if (fs.existsSync(rulesSrc) && fs.existsSync(rulesDst)) {
+  for (const f of fs.readdirSync(rulesSrc).filter((f) => f.endsWith(".mdc"))) {
+    ok(fs.existsSync(path.join(rulesDst, f)) &&
+       fs.readFileSync(path.join(rulesSrc, f), "utf8") === fs.readFileSync(path.join(rulesDst, f), "utf8"),
+       ".cursor/rules/" + f + " matches the tracked copy");
+  }
+}
+
 console.log("\nALL THEME TESTS PASSED");
