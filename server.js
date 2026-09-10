@@ -482,6 +482,59 @@ app.get("/api/plans", async (req, res) => {
   });
 });
 
+/* Starts a Razorpay subscription for the signed-in account and hands back the
+ * hosted checkout link.
+ *
+ * The link rather than Razorpay's checkout.js on purpose: the page's CSP does
+ * not allow third-party scripts, and short_url needs none — it is the payment
+ * page Razorpay hosts for that exact subscription.
+ *
+ * notes.user_id is the whole point of this endpoint. The webhook identifies
+ * the account from it, and a subscription created by hand in the dashboard
+ * arrives without one, which is why the webhook also falls back to email.
+ *
+ * Returns 503, not 500, when the keys are missing: not configured yet is a
+ * different thing from broken, and the dashboard says so in those words. */
+app.post("/api/billing/checkout", auth, async (req, res) => {
+  const keyId = process.env.RAZORPAY_KEY_ID, keySecret = process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) return res.status(503).json({ error: "not_configured" });
+
+  const plan = (await db.query(
+    "select id, name, razorpay_plan_id from plans where id=$1 and active = true", [String(req.body.planId || "")]
+  )).rows[0];
+  if (!plan) return res.status(404).json({ error: "no_such_plan" });
+  if (!plan.razorpay_plan_id) return res.status(503).json({ error: "plan_not_linked" });
+
+  const me = (await db.query("select email from users where id=$1", [req.userId])).rows[0];
+  try {
+    const r = await fetch(RAZORPAY_API + "/subscriptions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Basic " + Buffer.from(keyId + ":" + keySecret).toString("base64"),
+      },
+      body: JSON.stringify({
+        plan_id: plan.razorpay_plan_id,
+        // 120 months. Razorpay requires a count; this is "until cancelled" in
+        // the only form the API accepts.
+        total_count: 120,
+        customer_notify: 1,
+        notes: { user_id: String(req.userId), email: me && me.email, plan: plan.id },
+      }),
+    });
+    const body = await r.json().catch(() => ({}));
+    if (!r.ok || !body.short_url) {
+      // Razorpay's own error text is not ours to forward to a browser.
+      console.error("[razorpay] checkout failed", r.status, body && body.error);
+      return res.status(502).json({ error: "checkout_failed" });
+    }
+    res.json({ subscriptionId: body.id, url: body.short_url });
+  } catch (e) {
+    console.error("[razorpay] checkout error", e && e.message);
+    res.status(502).json({ error: "checkout_failed" });
+  }
+});
+
 // A user's own credit history. Scoped to req.userId, never to an id from the
 // query string — this is the ledger, and it is nobody else's business.
 app.get("/api/usage", auth, async (req, res) => {
@@ -1093,6 +1146,8 @@ app.get("/api/auth/google/callback", async (req, res) => {
  * NOT yet exercised against live Razorpay — the account's keys aren't set up,
  * so the signature and mapping paths are covered by tests only. Send a test
  * event from the Razorpay dashboard before trusting this with real money. */
+const RAZORPAY_API = process.env.RAZORPAY_API || "https://api.razorpay.com/v1";
+
 function razorpaySignatureValid(req) {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET;
   if (!secret || !req.rawBody) return false;
@@ -1166,9 +1221,13 @@ app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.ht
 app.get(["/login", "/signin"], (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
 // Control Room. No server-side gate on purpose: the page ships no data of its
-// own — every byte it shows comes from Supabase, where the admins-table RLS
-// policy plus mandatory TOTP decide what a caller may read, so serving the
-// shell to an anonymous visitor reveals nothing. Its asset refs are
+// own. Every byte it shows comes from /api/admin/*, and each of those calls
+// runs adminAuth, which re-reads is_admin and disabled from the database on
+// every request and requires the separate erasezo_admin cookie — the ordinary
+// session cookie does not open it. So serving the shell to an anonymous
+// visitor reveals nothing but an empty frame. (This comment used to describe
+// Supabase RLS and TOTP; that stack is gone, and a stale comment about where
+// an authorisation decision is made is worse than none.) Its asset refs are
 // root-absolute, which resolves identically here and at the extension root —
 // same file, no build step, no trailing-slash edge case.
 app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));

@@ -289,6 +289,15 @@
     return wrap;
   }
 
+  /* Payments are set up in the Razorpay dashboard, not here, so the two ways
+     that can be half-finished get their own words. Anything else is a real
+     failure and says so without repeating the server's error text. */
+  var CHECKOUT_ERRORS = {
+    not_configured: "Payments aren't switched on yet. This plan will be purchasable shortly.",
+    plan_not_linked: "This plan isn't connected to billing yet.",
+    no_such_plan: "That plan is no longer available.",
+  };
+
   /* ---- Plans ---- */
   function renderPlans(host) {
     if (!plans) { card(host, "Plans").appendChild(el("p", "muted", "Loading…")); loadPlans(); return; }
@@ -306,9 +315,22 @@
       pc.appendChild(price);
       pc.appendChild(el("p", "muted", p.unlimited ? "Unlimited images per day" : p.dailyQuota + " images per day"));
       if (!mine) {
-        pc.appendChild(btn(p.priceInr ? "Upgrade" : "Switch", "", function () {
-          toast("Checkout isn't connected yet — payments are still being set up.");
-        }));
+        var go2 = btn(p.priceInr ? "Upgrade" : "Switch", "", function () {
+          if (!p.priceInr) { toast("Contact support to move down a plan."); return; }
+          go2.disabled = true; go2.textContent = "Opening…";
+          api("/api/billing/checkout", { method: "POST", body: { planId: p.id } })
+            .then(function (r) {
+              // A named window, not a redirect: the dashboard stays put so the
+              // account is still there when they come back from paying.
+              window.open(r.url, "_blank", "noopener");
+              toast("Checkout opened in a new tab.");
+            })
+            .catch(function (e) {
+              toast(CHECKOUT_ERRORS[e.code] || "Could not start checkout. Try again in a moment.");
+            })
+            .then(function () { go2.disabled = false; go2.textContent = p.priceInr ? "Upgrade" : "Switch"; });
+        });
+        pc.appendChild(go2);
       }
       grid.appendChild(pc);
     });

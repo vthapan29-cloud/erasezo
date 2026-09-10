@@ -1370,7 +1370,7 @@
     });
   }
 
-  /* ---- Supabase cloud sync + account UI (separate from erasio.io) ---- */
+  /* ---- settings sync to the server + account UI ---- */
   var cloudTimer = null;
   function cloudPush() {
     if (!(window.Auth && Auth.cloud && Auth.cloud.available())) return;

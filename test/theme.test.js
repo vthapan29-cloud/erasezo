@@ -40,11 +40,16 @@ for (const dir of ["Erasezo-extension", "1.1.2_0"]) {
    extension folder and sync-admin.sh copies it into public/. Editing the
    public copy and then running the sync silently reverts the edit - which is
    exactly how a contrast fix committed here once vanished on the next sync. */
-for (const f of ["admin.css", "admin.js", "admin.html"]) {
-  const a = path.join(root, "Erasezo-extension", f), b = path.join(web, "public", f);
-  if (!fs.existsSync(a) || !fs.existsSync(b)) { console.log("skip (missing): " + f); continue; }
-  ok(fs.readFileSync(a, "utf8") === fs.readFileSync(b, "utf8"),
-     "public/" + f + " matches the extension copy (edit there, run sync-admin.sh)");
+for (const f of ["admin.css", "admin.js", "admin.html", "admin/auth.js"]) {
+  const src = path.join(root, "Erasezo-extension", f);
+  if (!fs.existsSync(src)) { console.log("skip (missing): " + f); continue; }
+  const want = fs.readFileSync(src, "utf8");
+  for (const [label, copy] of [["public/" + f, path.join(web, "public", f)],
+                               ["1.1.2_0/" + f, path.join(root, "1.1.2_0", f)]]) {
+    if (!fs.existsSync(copy)) { console.log("skip (missing): " + label); continue; }
+    ok(fs.readFileSync(copy, "utf8") === want,
+       label + " matches the extension copy (edit there, run sync-admin.sh)");
+  }
 }
 
 const theme = fs.readFileSync(path.join(web, "public/theme.css"), "utf8");
