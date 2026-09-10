@@ -17,8 +17,8 @@ for dir in "$EXT" "$EXT2"; do
   # resolves in both contexts.
   cp "$WEB/public/tokens.css" "$dir/tokens.css"
   echo "tokens -> $dir/tokens.css"
-  # The Control Room is served from both roots and asks for /mark.png, so the
-  # brand mark has to sit at the same path in each.
+  # user.html (the extension's Options page) asks for /mark.png, so the brand
+  # mark has to sit at the extension root too.
   cp "$WEB/public/mark.png" "$dir/mark.png"
   echo "mark   -> $dir/mark.png"
 done

@@ -36,20 +36,18 @@ for (const dir of ["Erasezo-extension", "1.1.2_0"]) {
   if (!fs.existsSync(p)) { console.log("skip (missing): " + dir); continue; }
   ok(fs.readFileSync(p, "utf8") === tokens, dir + "/tokens.css is in sync (run sync-design.sh)");
 }
-/* Same trap, other direction: the Control Room's source of truth is the
-   extension folder and sync-admin.sh copies it into public/. Editing the
-   public copy and then running the sync silently reverts the edit - which is
-   exactly how a contrast fix committed here once vanished on the next sync. */
-for (const f of ["admin.css", "admin.js", "admin.html", "admin/auth.js"]) {
-  const src = path.join(root, "Erasezo-extension", f);
-  if (!fs.existsSync(src)) { console.log("skip (missing): " + f); continue; }
-  const want = fs.readFileSync(src, "utf8");
-  for (const [label, copy] of [["public/" + f, path.join(web, "public", f)],
-                               ["1.1.2_0/" + f, path.join(root, "1.1.2_0", f)]]) {
-    if (!fs.existsSync(copy)) { console.log("skip (missing): " + label); continue; }
-    ok(fs.readFileSync(copy, "utf8") === want,
-       label + " matches the extension copy (edit there, run sync-admin.sh)");
-  }
+/* The Control Room used to live in the extension package and be copied here,
+   which meant editing the copy and running the sync silently reverted the
+   edit — it ate a contrast fix once. It is served only from public/ now, so
+   there is one copy and nothing to keep in step. This asserts the removal
+   rather than the sync: a stray admin.* back in the package is the old trap
+   returning, and it would ship the admin API map to every installed user. */
+for (const f of ["admin.html", "admin.css", "admin.js", "admin"]) {
+  ok(!fs.existsSync(path.join(root, "Erasezo-extension", f)),
+     "the extension package does not carry " + f);
+}
+for (const f of ["admin.html", "admin.css", "admin.js", "admin/auth.js"]) {
+  ok(fs.existsSync(path.join(web, "public", f)), "the site still serves " + f);
 }
 
 const theme = fs.readFileSync(path.join(web, "public/theme.css"), "utf8");

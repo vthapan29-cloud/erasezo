@@ -15,6 +15,7 @@ const vm = require("vm");
 const assert = require("assert");
 
 const ext = path.join(__dirname, "../../Erasezo-extension");
+const web = path.join(__dirname, "..");
 const ok = (c, m) => { if (!c) { console.error("FAIL - " + m); process.exit(1); } console.log("ok - " + m); };
 if (!fs.existsSync(ext)) { console.log("skip: extension folder not present"); process.exit(0); }
 
@@ -167,7 +168,7 @@ ok(/__erasezoAdmin: "stale"/.test(wb), "and says so, instead of going silent");
 /* Going silent is the dangerous half: the Control Room's bridge times out
    after 800ms and falls back to localStorage, so a stale tab would look like
    a browser with no extension and quietly mock every write. */
-const adm = fs.readFileSync(path.join(ext, "admin.js"), "utf8");
+const adm = fs.readFileSync(path.join(web, "public", "admin.js"), "utf8");
 ok(/bridgeStale/.test(adm) && /if \(bridgeStale\) \{ toast\(/.test(adm),
    "the panel refuses to mock a write for a tab whose extension was reloaded");
 

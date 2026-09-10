@@ -52,7 +52,7 @@ async function req(path, opts) { return fetch(base + path, opts); }
   console.log("ok - non-auth routes unaffected by the auth-only rate limiter");
 
   // 5) The Control Room is served, and its relative asset refs resolve to real
-  //    files. That layout is load-bearing (see sync-admin.sh) — a bad copy
+  //    files. That layout is load-bearing — a bad copy
   //    would 404 the panel's scripts and render a silently blank shell.
   const rAdmin = await req("/admin");
   assert.strictEqual(rAdmin.status, 200, "/admin serves the Control Room");

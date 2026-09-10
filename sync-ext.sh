@@ -8,9 +8,9 @@
 # serving a Control Room two contrast fixes old, and how a manifest fix could
 # ship to the tracked copy while the loaded copy still had the old one.
 #
-# sync-design.sh and sync-admin.sh each copy their own few files; this copies
-# everything, so it is the one to run after touching the manifest, the page
-# scripts or the bundle. test/extension.test.js fails if the two drift.
+# sync-design.sh copies the shared design files; this copies everything, so
+# it is the one to run after touching the manifest, the page scripts or the
+# bundle. test/extension.test.js fails if the two drift.
 set -e
 WEB="$(cd "$(dirname "$0")" && pwd)"
 SRC="${1:-$WEB/../Erasezo-extension}"
