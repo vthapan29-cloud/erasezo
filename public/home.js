@@ -38,6 +38,74 @@
     });
   }
 
+  /* ---- theme ----
+   * tokens.css answers to data-theme in both directions: set it and the page
+   * follows regardless of what the OS says, leave it off and the OS decides.
+   * The choice is remembered per browser; nothing about it belongs on a
+   * server. */
+  var THEME_KEY = "erasezo.theme";
+  var root = document.documentElement;
+  var themeBtn = document.getElementById("themeBtn");
+
+  function systemDark() {
+    try { return window.matchMedia("(prefers-color-scheme: dark)").matches; } catch (e) { return false; }
+  }
+  function applyTheme(t) {
+    if (t) root.setAttribute("data-theme", t); else root.removeAttribute("data-theme");
+    var dark = t ? t === "dark" : systemDark();
+    if (themeBtn) themeBtn.setAttribute("aria-label", dark ? "Switch to light theme" : "Switch to dark theme");
+  }
+  try { applyTheme(localStorage.getItem(THEME_KEY)); } catch (e) { applyTheme(null); }
+
+  if (themeBtn) {
+    themeBtn.addEventListener("click", function () {
+      var now = root.getAttribute("data-theme") || (systemDark() ? "dark" : "light");
+      var next = now === "dark" ? "light" : "dark";
+      applyTheme(next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* private window */ }
+    });
+  }
+
+  /* ---- the frame ----
+   * Two copies of the same artwork, the top one clipped. --wipe is written
+   * from here rather than from a style attribute: the page's CSP drops inline
+   * styles in markup, and a wipe that silently does not move is worse than no
+   * wipe at all. */
+  var demo = document.getElementById("demo");
+  var wipe = document.getElementById("wipe");
+  var stage = wipe && wipe.parentElement;
+
+  if (wipe && stage) {
+    var paint = function () { stage.style.setProperty("--wipe", wipe.value + "%"); };
+    wipe.addEventListener("input", paint);
+    paint();
+  }
+
+  // Images / Video. The buttons are real, so they change something real.
+  var MODES = {
+    image: { url: "gemini.google.com", title: "Watermark removed", sub: "On your device · nothing uploaded" },
+    video: { url: "flow.google.com", title: "Video cleaned, frame by frame", sub: "720p and 1080p · nothing uploaded" }
+  };
+  var fcTitle = document.getElementById("fcTitle");
+  var fcSub = document.getElementById("fcSub");
+  var demoUrl = document.getElementById("demoUrl");
+
+  Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (b) {
+    b.addEventListener("click", function () {
+      var mode = b.getAttribute("data-mode");
+      Array.prototype.forEach.call(document.querySelectorAll(".seg button"), function (o) {
+        var on = o === b;
+        o.classList.toggle("on", on);
+        o.setAttribute("aria-pressed", String(on));
+      });
+      if (demo) demo.setAttribute("data-mode", mode);
+      var m = MODES[mode];
+      if (demoUrl) demoUrl.textContent = m.url;
+      if (fcTitle) fcTitle.textContent = m.title;
+      if (fcSub) fcSub.textContent = m.sub;
+    });
+  });
+
   /* ---- already signed in? ---- */
   // Cheap courtesy: someone with a session should be offered their dashboard
   // rather than a sign-in form they don't need.

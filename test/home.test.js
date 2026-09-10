@@ -26,7 +26,8 @@ const js = fs.readFileSync(path.join(pub, "home.js"), "utf8");
         visitor met was a password field for an account they did not have. */
   const home = await get("/");
   const homeBody = await home.text();
-  assert.ok(/Take the watermark off/.test(homeBody), "/ serves the home page");
+  // Keyed on the page's furniture, not its headline — copy is meant to change.
+  assert.ok(/home\.css/.test(homeBody) && /id="pricing"/.test(homeBody), "/ serves the home page");
   const login = await get("/login");
   assert.ok(/Sign in to Erasezo/.test(await login.text()), "/login still serves the form");
   for (const p of ["/register", "/signup"]) {
@@ -45,13 +46,35 @@ const js = fs.readFileSync(path.join(pub, "home.js"), "utf8");
     "style-src still forbids inline styles");
   assert.ok(!/\sstyle="/.test(html), "home.html carries no style attribute for the CSP to drop");
 
-  const fills = [...html.matchAll(/data-fill="(\d+)"/g)].map((m) => m[1]);
-  assert.ok(fills.length >= 4, "the readout bars declare their fill");
-  for (const f of fills) {
-    assert.ok(css.includes('.bar[data-fill="' + f + '"] > i { width: ' + f + '%; }'),
-      "a bar declaring " + f + "% has a rule to draw it — without one it renders empty");
-  }
+  // The hero's wipe is driven by a custom property written from JS. CSP allows
+  // that (it governs markup, not CSSOM), but the page must not depend on the
+  // script having run: the stage declares a starting --wipe so the frame shows
+  // both halves even if home.js never loads.
+  assert.ok(/--wipe:\s*\d+%/.test(css), "the stage ships a default wipe position");
+  assert.ok(/setProperty\("--wipe"/.test(js), "and JS moves it by custom property, not by a style attribute");
+  assert.ok(/clip-path: inset\([^)]*var\(--wipe\)/.test(css), "the clean copy is clipped by that property");
+
   console.log("ok - nothing on the page depends on an inline style the CSP will drop");
+
+  /* 2b) Every control in the header and hero does something. A language
+         dropdown was in the reference design and is deliberately absent —
+         the site has one language, and a select that switches nothing is
+         worse than no select. */
+  assert.ok(/id="themeBtn"/.test(html), "the theme button exists");
+  assert.ok(/setAttribute\("data-theme"/.test(js) && /removeAttribute\("data-theme"\)/.test(js),
+    "it sets and clears data-theme, which is what tokens.css answers to");
+  assert.ok(/localStorage\.setItem\(THEME_KEY/.test(js), "and the choice survives a reload");
+  assert.ok(/aria-label/.test(html.slice(html.indexOf('id="themeBtn"') - 200, html.indexOf('id="themeBtn"') + 200)),
+    "and it is labelled for a screen reader");
+  assert.ok(!/<select/.test(html), "no dropdown that switches nothing");
+
+  const modes = [...html.matchAll(/data-mode="(\w+)"/g)].map((m) => m[1]);
+  assert.ok(modes.includes("image") && modes.includes("video"), "the preview has both modes");
+  for (const m of ["image", "video"]) {
+    assert.ok(new RegExp(m + ":\\s*\\{ url:").test(js), m + " mode changes what the frame shows");
+  }
+  assert.ok(/aria-pressed/.test(html), "the segmented control reports its state");
+  console.log("ok - the header and hero controls all drive something real");
 
   /* 3) Prices come from the table that bills. A number typed into the markup
         is a number that drifts away from what a customer is charged. */
