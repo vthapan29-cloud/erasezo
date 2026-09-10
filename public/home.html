@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Erasezo — remove Gemini and Google Flow watermarks, on your own machine</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="A Chrome side panel that clears the watermark from images and video you generate in Gemini, AI Studio, Google Flow and Google Docs. Processing happens on your device — nothing is uploaded.">
+<link rel="icon" href="/favicon.png" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/home.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-head">
+  <div class="wrap head-in">
+    <a class="brand" href="/"><img src="/mark.png" alt="" width="30" height="30">Erasezo</a>
+    <button class="navtoggle" id="navToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Menu">☰</button>
+    <nav class="site-nav" id="siteNav" aria-label="Main">
+      <a href="#how">How it works</a>
+      <a href="#where">Where it runs</a>
+      <a href="#control">Controls</a>
+      <a href="#pricing">Pricing</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <div class="head-cta">
+      <a class="btn ghost sm" href="/login" id="signinLink">Sign in</a>
+      <a class="btn sm" id="installTop" href="#">Add to Chrome</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- ---------- hero ---------- -->
+  <section class="hero">
+    <div class="hero-grid" aria-hidden="true"></div>
+    <div class="wrap hero-in">
+      <div>
+        <p class="eyebrow">Chrome extension · Image &amp; video</p>
+        <h1>Take the watermark off.<br><span class="grad">Leave the picture alone.</span></h1>
+        <p class="lede">
+          Erasezo runs as a side panel next to Gemini, AI Studio, Google Flow and Google Docs.
+          It finds the stamp, reconstructs what was behind it, and hands you the file —
+          on your own machine, without uploading anything.
+        </p>
+        <div class="hero-cta">
+          <a class="btn lg" id="installHero" href="#">
+            <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Add to Chrome — free
+          </a>
+          <a class="btn ghost lg" href="#how">See how it works</a>
+        </div>
+        <p class="hero-note">15 free credits a day. No card to start.</p>
+
+        <div class="runs">
+          <span class="lbl">Runs on</span>
+          <span class="chip">gemini.google.com</span>
+          <span class="chip">aistudio.google.com</span>
+          <span class="chip">flow.google.com</span>
+          <span class="chip">docs.google.com</span>
+        </div>
+      </div>
+
+      <!-- A readout panel, not a product screenshot: these are the real
+           controls and the real defaults, so it says something true about
+           what the thing is rather than dressing up a picture of it. -->
+      <div class="panel" role="img" aria-label="The extension's removal settings, showing mask size 1.00×, gain 0.62, trust threshold 0.50, accept threshold 0.30 and scan stride 8 pixels.">
+        <div class="panel-bar"><span class="dot live"></span><b>Removal settings</b></div>
+        <div class="panel-body">
+          <dl class="read"><dt>Mask size</dt><dd>1.00×</dd></dl>
+          <div class="bar" data-fill="34"><i></i></div>
+          <dl class="read"><dt>Gain when stamp drifts</dt><dd>0.62</dd></dl>
+          <div class="bar" data-fill="62"><i></i></div>
+          <dl class="read"><dt>Trust auto-margin if NCC ≥</dt><dd>0.50</dd></dl>
+          <div class="bar" data-fill="50"><i></i></div>
+          <dl class="read"><dt>Min NCC to accept detection</dt><dd>0.30</dd></dl>
+          <div class="bar" data-fill="30"><i></i></div>
+          <dl class="read"><dt>Scan stride</dt><dd>8 px</dd></dl>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- privacy ---------- -->
+  <section id="privacy">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">On your device</p>
+        <h2>Your files never leave the browser.</h2>
+        <p class="lede">
+          The removal runs in the page, on your own hardware. There is no upload step,
+          no queue, and no copy of your work on a server — because there is no server in
+          the path at all.
+        </p>
+      </div>
+      <div class="grid g3">
+        <article class="card">
+          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <h3>Nothing is uploaded</h3>
+          <p>Images and video are decoded, cleaned and saved locally. Your account only ever exchanges sign-in and credit counts.</p>
+        </article>
+        <article class="card">
+          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+          <h3>No queue to wait in</h3>
+          <p>Nothing is batched on someone else's GPU. The work starts the moment you click and finishes at the speed of your machine.</p>
+        </article>
+        <article class="card">
+          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg></div>
+          <h3>Works while you generate</h3>
+          <p>Turn on auto-removal and the watermark is gone as the file downloads, without a second round trip through another tool.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- how ---------- -->
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">How it works</p>
+        <h2>Three steps, then it stays out of the way.</h2>
+      </div>
+      <div class="grid g3">
+        <article class="step">
+          <span class="n">01</span>
+          <h3>Install and sign in</h3>
+          <p>Add the extension, open the side panel, and sign in. You get 15 credits a day without paying anything.</p>
+        </article>
+        <article class="step">
+          <span class="n">02</span>
+          <h3>Generate as you normally would</h3>
+          <p>Erasezo puts a button on each generated tile in Flow, and cleans downloads from Gemini and AI Studio in place.</p>
+        </article>
+        <article class="step">
+          <span class="n">03</span>
+          <h3>Take the clean file</h3>
+          <p>Or drop any image or MP4 straight into the panel — PNG, JPG and WebP for stills, 720p and 1080p for video.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- where ---------- -->
+  <section id="where">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Where it runs</p>
+        <h2>Four surfaces, one panel.</h2>
+        <p class="lede">Each of these is a place Google puts a watermark on something you made. Erasezo attaches to all of them from the same install.</p>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <caption>Support by surface. Video means MP4 export at 720p or 1080p.</caption>
+          <thead>
+            <tr><th scope="col">Surface</th><th scope="col">Images</th><th scope="col">Video</th><th scope="col">How it appears</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Gemini</th><td><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td>Cleans the file as you download it</td></tr>
+            <tr><th scope="row">Google AI Studio</th><td><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td>Cleans the file as you download it</td></tr>
+            <tr><th scope="row">Google Flow</th><td><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td>A button on each generated tile</td></tr>
+            <tr><th scope="row">Google Docs video</th><td><span class="no">—</span></td><td><span class="yes">Yes</span></td><td>Cleans on insert</td></tr>
+            <tr><th scope="row">Anything else</th><td><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td>Drop the file into the side panel</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- controls ---------- -->
+  <section id="control">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Controls</p>
+        <h2>When the automatic pass isn't enough, you get the dials.</h2>
+        <p class="lede">
+          Most files need nothing. For the ones that do, the detector is not a black box —
+          every threshold it uses is in the panel, with the defaults it shipped with.
+        </p>
+      </div>
+      <div class="grid g2">
+        <article class="card">
+          <h3>Mask size</h3>
+          <p>Grows the treated area when a stamp sits slightly outside where it was found. Left at 1.00× it treats exactly the detected region.</p>
+        </article>
+        <article class="card">
+          <h3>Gain when the stamp drifts</h3>
+          <p>How hard to push when the mark is not where it usually sits. Lower it if a correction is leaving a soft patch behind.</p>
+        </article>
+        <article class="card">
+          <h3>Accept and trust thresholds</h3>
+          <p>The match scores that decide whether a watermark is really there. Lower the accept threshold to catch fainter marks.</p>
+        </article>
+        <article class="card">
+          <h3>Scan stride</h3>
+          <p>How finely to search when the stamp has moved. Smaller is more thorough and slower; 8 pixels is the balance it ships with.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- pricing ---------- -->
+  <section id="pricing">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Pricing</p>
+        <h2>Free every day. Pay only if you outgrow it.</h2>
+        <p class="lede">One credit is one cleaned file. Credits refresh daily — they don't expire and they don't roll over.</p>
+      </div>
+      <div class="plans" id="plans">
+        <p class="plan-skel">Loading plans…</p>
+      </div>
+      <p class="foot-note" id="planNote"></p>
+    </div>
+  </section>
+
+  <!-- ---------- faq ---------- -->
+  <section id="faq">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">Questions</p>
+        <h2>The things worth knowing first.</h2>
+      </div>
+      <div class="faq">
+        <details>
+          <summary>Do my images get uploaded anywhere?</summary>
+          <p>No. Decoding, detection and reconstruction all happen in your browser. The only things that travel to us are your sign-in and your credit balance.</p>
+        </details>
+        <details>
+          <summary>What counts as a credit?</summary>
+          <p>One cleaned file. A free account gets 15 a day, refreshed at midnight UTC. Nothing is deducted when a file turns out to have no watermark on it.</p>
+        </details>
+        <details>
+          <summary>Which video resolutions work?</summary>
+          <p>720p and 1080p MP4. Upscaled 4K exports are not supported yet — the mark lands differently after Flow's upsampler, and a bad correction is worse than none, so the panel tells you instead of guessing.</p>
+        </details>
+        <details>
+          <summary>Google Flow now has its own watermark toggle. Do I still need this?</summary>
+          <p>If your Flow account has the built-in option, use it — the extension will offer to stand down for Flow and keep working on Gemini and AI Studio. Running both is just extra processing.</p>
+        </details>
+        <details>
+          <summary>Can I use it on files I didn't make in Google's tools?</summary>
+          <p>Yes. Drop any PNG, JPG, WebP or MP4 into the side panel. The detector is tuned for Google's sparkle, so results on other marks vary.</p>
+        </details>
+        <details>
+          <summary>What happens to my credits if I cancel?</summary>
+          <p>You return to the free tier and keep getting 15 a day. Nothing you have already cleaned is affected.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- closing ---------- -->
+  <section>
+    <div class="wrap">
+      <div class="band">
+        <p class="eyebrow">Get started</p>
+        <h2>It takes about a minute.</h2>
+        <p class="lede">Install, sign in, and clean the next thing you generate.</p>
+        <div class="btn-row">
+          <a class="btn lg" id="installEnd" href="#">Add to Chrome — free</a>
+          <a class="btn ghost lg" href="/login">Sign in</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-in">
+      <a class="brand" href="/"><img src="/mark.png" alt="" width="30" height="30">Erasezo</a>
+      <nav class="foot-links" aria-label="Footer">
+        <a href="#how">How it works</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+        <a href="/login">Sign in</a>
+        <a href="/dashboard">Dashboard</a>
+      </nav>
+    </div>
+    <p class="foot-note">
+      Erasezo is an independent tool and is not affiliated with, endorsed by, or connected to Google.
+      Gemini, AI Studio and Flow are trademarks of Google LLC. Use it on work you have the right to use.
+    </p>
+  </div>
+</footer>
+
+<script src="/home.js"></script>
+</body>
+</html>

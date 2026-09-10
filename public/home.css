@@ -1,0 +1,270 @@
+/* erasezo.com home.
+ *
+ * Tokens only — every colour, radius and font here resolves through
+ * tokens.css, the same set the dashboard, the Control Room and the extension
+ * sidepanel already use. A marketing page that invents its own palette is how
+ * a product ends up looking like two products to the person who installs it.
+ *
+ * The visual idiom is the instrument, not the brochure: hairline borders
+ * carry the structure, shadows only lift what floats, figures are set in
+ * mono, and section labels read like panel legends. It comes from what this
+ * thing actually is — a detector with thresholds you can tune — rather than
+ * from what marketing pages usually look like.
+ */
+
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+
+body {
+  margin: 0;
+  background: var(--ez-bg);
+  color: var(--ez-ink);
+  font-family: var(--ez-font);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; display: block; }
+a { color: var(--ez-accent-text); }
+
+/* One focus treatment for the whole page. Never removed, never invisible. */
+:where(a, button, summary, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--ez-accent);
+  outline-offset: 3px;
+  border-radius: var(--ez-r-sm);
+}
+
+.wrap { width: min(1140px, 100% - 40px); margin-inline: auto; }
+@media (max-width: 640px) { .wrap { width: min(1140px, 100% - 32px); } }
+
+/* Skip link — first thing in the tab order, invisible until it matters. */
+.skip {
+  position: absolute; left: 12px; top: -60px; z-index: 100;
+  background: var(--ez-accent); color: var(--ez-accent-ink);
+  padding: 10px 16px; border-radius: var(--ez-r-sm); font-weight: 700;
+  transition: top .15s ease;
+}
+.skip:focus { top: 12px; }
+@media (prefers-reduced-motion: reduce) { .skip { transition: none; } }
+
+/* ---------- section furniture ---------- */
+section { padding: clamp(64px, 9vw, 120px) 0; }
+.eyebrow {
+  font-family: var(--ez-mono);
+  font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ez-accent-text); font-weight: 600; margin: 0 0 14px;
+  display: flex; align-items: center; gap: 10px;
+}
+.eyebrow::before {
+  content: ""; width: 22px; height: 1px; background: var(--ez-accent); flex: none;
+}
+h1, h2, h3 { margin: 0; letter-spacing: -.02em; line-height: 1.12; font-weight: 800; }
+h1 { font-size: clamp(2.4rem, 5.2vw, 4rem); letter-spacing: -.035em; }
+h2 { font-size: clamp(1.7rem, 3.2vw, 2.5rem); }
+h3 { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
+.lede { color: var(--ez-ink-soft); font-size: clamp(1rem, 1.5vw, 1.15rem); margin: 16px 0 0; max-width: 58ch; }
+.section-head { max-width: 62ch; margin-bottom: clamp(32px, 5vw, 56px); }
+
+/* ---------- header ---------- */
+.site-head {
+  position: sticky; top: 0; z-index: 40;
+  background: color-mix(in srgb, var(--ez-bg) 82%, transparent);
+  backdrop-filter: saturate(1.4) blur(12px);
+  border-bottom: 1px solid var(--ez-border);
+}
+.head-in { display: flex; align-items: center; gap: 28px; height: 66px; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; font-weight: 800; letter-spacing: -.02em; }
+.brand img { width: 30px; height: 30px; border-radius: 8px; }
+.site-nav { display: flex; gap: 4px; margin-left: auto; }
+.site-nav a {
+  color: var(--ez-ink-soft); text-decoration: none; font-size: .92rem; font-weight: 500;
+  padding: 8px 12px; border-radius: var(--ez-r-sm); transition: color .15s ease, background .15s ease;
+}
+.site-nav a:hover { color: var(--ez-ink); background: var(--ez-surface-2); }
+.head-cta { display: flex; align-items: center; gap: 10px; }
+@media (prefers-reduced-motion: reduce) { .site-nav a { transition: none; } }
+
+.navtoggle {
+  display: none; margin-left: auto; background: none; border: 1px solid var(--ez-border);
+  color: var(--ez-ink); border-radius: var(--ez-r-sm); padding: 7px 10px; cursor: pointer;
+}
+@media (max-width: 900px) {
+  .site-nav, .head-cta .btn.ghost { display: none; }
+  .navtoggle { display: block; }
+  .head-cta { margin-left: 10px; }
+  body.nav-open .site-nav {
+    display: flex; flex-direction: column; position: absolute; left: 0; right: 0; top: 66px;
+    background: var(--ez-surface); border-bottom: 1px solid var(--ez-border);
+    padding: 10px 20px 16px; gap: 2px; box-shadow: var(--ez-shadow);
+  }
+  body.nav-open .site-nav a { padding: 12px; }
+}
+
+/* ---------- buttons ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 12px 20px; border-radius: var(--ez-r-pill); border: 1px solid transparent;
+  font: 700 .95rem var(--ez-font); text-decoration: none; cursor: pointer;
+  background: var(--ez-accent); color: var(--ez-accent-ink);
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
+}
+.btn:hover { background: var(--ez-accent-hover); }
+.btn:active { transform: translateY(1px); }
+.btn.ghost { background: transparent; color: var(--ez-ink); border-color: var(--ez-border-strong); }
+.btn.ghost:hover { background: var(--ez-surface-2); border-color: var(--ez-accent); color: var(--ez-accent-text); }
+.btn.sm { padding: 9px 15px; font-size: .88rem; }
+.btn.lg { padding: 15px 26px; font-size: 1rem; }
+.btn[disabled], .btn[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
+.btn[disabled]:active, .btn[aria-disabled="true"]:active { transform: none; }
+.btn .ic { width: 17px; height: 17px; flex: none; }
+@media (prefers-reduced-motion: reduce) { .btn { transition: none; } .btn:active { transform: none; } }
+
+/* ---------- hero ---------- */
+.hero { padding-top: clamp(48px, 7vw, 84px); position: relative; overflow: hidden; }
+/* The grid that dissolves — the same idea the mark is built on. Decorative
+   only, so it is hidden from assistive tech and stands down for reduced data. */
+.hero-grid {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--ez-border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ez-border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(120% 80% at 78% 8%, #000 0%, transparent 62%);
+          mask-image: radial-gradient(120% 80% at 78% 8%, #000 0%, transparent 62%);
+  opacity: .8;
+}
+.hero-in { position: relative; display: grid; gap: clamp(40px, 5vw, 64px); grid-template-columns: 1.05fr .95fr; align-items: center; }
+@media (max-width: 940px) { .hero-in { grid-template-columns: 1fr; } }
+
+.hero h1 .grad {
+  background: linear-gradient(100deg, var(--ez-accent), color-mix(in srgb, var(--ez-accent) 45%, #7C4DFF));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.hero-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+.hero-note { margin: 16px 0 0; color: var(--ez-ink-faint); font-size: .86rem; }
+
+/* Where it runs, as a row of chips under the fold-line. */
+.runs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 34px; padding-top: 26px; border-top: 1px solid var(--ez-border); }
+.runs .lbl { font-family: var(--ez-mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: var(--ez-ink-faint); width: 100%; margin-bottom: 4px; }
+.chip {
+  font-family: var(--ez-mono); font-size: 12px; padding: 5px 11px; border-radius: var(--ez-r-pill);
+  border: 1px solid var(--ez-border); background: var(--ez-surface); color: var(--ez-ink-soft);
+}
+
+/* ---------- the panel figure ---------- */
+.panel {
+  background: var(--ez-surface); border: 1px solid var(--ez-border);
+  border-radius: var(--ez-r-lg); box-shadow: var(--ez-shadow); overflow: hidden;
+}
+.panel-bar {
+  display: flex; align-items: center; gap: 8px; padding: 11px 14px;
+  border-bottom: 1px solid var(--ez-border); background: var(--ez-surface-2);
+}
+.panel-bar b { font-size: .82rem; font-weight: 600; color: var(--ez-ink-soft); }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ez-border-strong); flex: none; }
+.dot.live { background: var(--ez-good); }
+.panel-body { padding: 18px; display: grid; gap: 14px; }
+
+/* A readout row: label left, value right in mono. This is the instrument. */
+.read { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.read dt { font-size: .8rem; color: var(--ez-ink-faint); letter-spacing: .01em; }
+.read dd { margin: 0; font-family: var(--ez-mono); font-size: .9rem; font-variant-numeric: tabular-nums; color: var(--ez-ink); }
+.bar { height: 6px; border-radius: var(--ez-r-pill); background: var(--ez-surface-3); overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--ez-accent); border-radius: inherit; width: 0; }
+/* The fill is declared here, not in a style attribute: the page's CSP has no
+   'unsafe-inline' in style-src, so an inline width is silently dropped — and a
+   dropped width on a bar whose <i> is a block means every reading rendered
+   full, contradicting the number printed beside it. */
+.bar[data-fill="30"] > i { width: 30%; }
+.bar[data-fill="34"] > i { width: 34%; }
+.bar[data-fill="50"] > i { width: 50%; }
+.bar[data-fill="62"] > i { width: 62%; }
+
+/* ---------- cards ---------- */
+.grid { display: grid; gap: 16px; }
+.g2 { grid-template-columns: repeat(2, 1fr); }
+.g3 { grid-template-columns: repeat(3, 1fr); }
+.g4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 940px) { .g3, .g4 { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 620px) { .g2, .g3, .g4 { grid-template-columns: 1fr; } }
+
+.card {
+  background: var(--ez-surface); border: 1px solid var(--ez-border);
+  border-radius: var(--ez-r); padding: 22px;
+}
+.card p { margin: 8px 0 0; color: var(--ez-ink-soft); font-size: .92rem; }
+.card .ic-tile {
+  width: 36px; height: 36px; border-radius: var(--ez-r-sm); display: grid; place-items: center;
+  background: var(--ez-accent-wash); color: var(--ez-accent-text); margin-bottom: 14px;
+}
+.card .ic-tile svg { width: 18px; height: 18px; }
+
+/* Numbered steps. The number is the ornament — no icon needed. */
+.step { position: relative; padding-left: 56px; }
+.step .n {
+  position: absolute; left: 0; top: 0; width: 38px; height: 38px; border-radius: var(--ez-r-sm);
+  display: grid; place-items: center; font-family: var(--ez-mono); font-size: .95rem; font-weight: 600;
+  background: var(--ez-surface); border: 1px solid var(--ez-border-strong); color: var(--ez-accent-text);
+}
+.step p { margin: 8px 0 0; color: var(--ez-ink-soft); font-size: .92rem; }
+
+/* ---------- surfaces table ---------- */
+.tablewrap { overflow-x: auto; border: 1px solid var(--ez-border); border-radius: var(--ez-r); background: var(--ez-surface); }
+table { width: 100%; border-collapse: collapse; min-width: 560px; }
+caption { text-align: left; padding: 16px 18px 0; color: var(--ez-ink-faint); font-size: .84rem; }
+th, td { text-align: left; padding: 14px 18px; border-bottom: 1px solid var(--ez-border); font-size: .92rem; }
+thead th { font-family: var(--ez-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ez-ink-faint); font-weight: 600; }
+tbody tr:last-child th, tbody tr:last-child td { border-bottom: 0; }
+tbody th { font-weight: 600; }
+td .yes { color: var(--ez-good); font-weight: 700; }
+td .no { color: var(--ez-ink-faint); }
+
+/* ---------- pricing ---------- */
+.plans { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); align-items: start; }
+.plan { background: var(--ez-surface); border: 1px solid var(--ez-border); border-radius: var(--ez-r); padding: 24px; }
+.plan.featured { border-color: var(--ez-accent); box-shadow: var(--ez-shadow); }
+.plan .tag {
+  display: inline-block; font-family: var(--ez-mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: var(--ez-r-pill); border: 1px solid var(--ez-accent);
+  color: var(--ez-accent-text); margin-bottom: 12px; font-weight: 600;
+}
+.plan .price { font-family: var(--ez-mono); font-size: 2rem; font-weight: 600; letter-spacing: -.02em; margin: 6px 0 2px; }
+.plan .price small { font-family: var(--ez-font); font-size: .85rem; font-weight: 500; color: var(--ez-ink-faint); letter-spacing: 0; }
+.plan .quota { color: var(--ez-ink-soft); font-size: .9rem; margin: 0 0 18px; }
+.plan .btn { width: 100%; }
+.plan-skel { color: var(--ez-ink-faint); font-size: .9rem; }
+
+/* ---------- faq ---------- */
+.faq { max-width: 780px; }
+details {
+  border-bottom: 1px solid var(--ez-border); padding: 4px 0;
+}
+details summary {
+  cursor: pointer; padding: 18px 34px 18px 0; font-weight: 600; position: relative; list-style: none;
+}
+details summary::-webkit-details-marker { display: none; }
+details summary::after {
+  content: "+"; position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  font-family: var(--ez-mono); font-size: 1.2rem; color: var(--ez-accent-text); line-height: 1;
+}
+details[open] summary::after { content: "\2212"; }
+details p { margin: 0 0 18px; color: var(--ez-ink-soft); font-size: .94rem; max-width: 68ch; }
+
+/* ---------- closing band ---------- */
+.band {
+  background: var(--ez-surface); border: 1px solid var(--ez-border);
+  border-radius: var(--ez-r-lg); padding: clamp(32px, 5vw, 56px); text-align: center;
+  position: relative; overflow: hidden;
+}
+.band .eyebrow { justify-content: center; }
+.band .lede { margin-inline: auto; }
+.band .btn-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
+
+/* ---------- footer ---------- */
+.site-foot { border-top: 1px solid var(--ez-border); padding: 44px 0 56px; margin-top: clamp(48px, 7vw, 96px); }
+.foot-in { display: flex; flex-wrap: wrap; gap: 28px; justify-content: space-between; align-items: flex-start; }
+.foot-links { display: flex; gap: 26px; flex-wrap: wrap; }
+.foot-links a { color: var(--ez-ink-soft); text-decoration: none; font-size: .9rem; }
+.foot-links a:hover { color: var(--ez-ink); text-decoration: underline; }
+.foot-note { color: var(--ez-ink-faint); font-size: .82rem; margin: 24px 0 0; }

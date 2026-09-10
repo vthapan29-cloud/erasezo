@@ -1216,8 +1216,13 @@ app.post("/api/webhooks/razorpay", async (req, res) => {
 // redirect:false — public/admin is a real directory, and static's default
 // "add a trailing slash" redirect for directories fights the /admin route
 // below into a redirect loop. Assets under /admin/ still serve normally.
-app.use(express.static(path.join(__dirname, "public"), { redirect: false }));
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+// index:false — static would otherwise answer "/" with public/index.html
+// before the route below ever runs, which is exactly what it did: the
+// home page was written, routed, and still invisible.
+app.use(express.static(path.join(__dirname, "public"), { redirect: false, index: false }));
+// "/" was the sign-in form, which meant the front door of the product asked
+// for a password before it said what the product was.
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "home.html")));
 app.get(["/login", "/signin"], (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
 // Control Room. No server-side gate on purpose: the page ships no data of its
@@ -1237,7 +1242,7 @@ app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "adm
  * lands somewhere real instead of a 404. Replace with actual pages as they
  * get written. */
 const LINK_REDIRECTS = {
-  "/register": "/", "/signup": "/", "/forgot-password": "/",
+  "/register": "/login", "/signup": "/login", "/forgot-password": "/login",
   "/subscribe": "/dashboard", "/dashboard/settings": "/dashboard",
   "/tool": "/dashboard", "/guide": "/dashboard", "/contact": "/dashboard",
   "/privacy": "/dashboard",
