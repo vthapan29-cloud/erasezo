@@ -43,9 +43,9 @@
   --ez-accent-wash: #E0F2FE;
 
   /* Semantic. Same rule: -text is the readable form, plain is the fill. */
-  --ez-good:      #12805C;   --ez-good-wash: #DCFCE7;
-  --ez-warn:      #A65B00;   --ez-warn-wash: #FEF3C7;
-  --ez-crit:      #C0362B;   --ez-crit-wash: #FEE2E2;
+  --ez-good:      #12805C;   --ez-good-wash: #DCFCE7;   --ez-good-ink: #FFFFFF;
+  --ez-warn:      #A65B00;   --ez-warn-wash: #FEF3C7;   --ez-warn-ink: #FFFFFF;
+  --ez-crit:      #C0362B;   --ez-crit-wash: #FEE2E2;   --ez-crit-ink: #FFFFFF;
 
   /* Elevation. Borders carry the structure; shadows only lift what floats. */
   --ez-shadow-sm: 0 1px 2px rgb(14 23 38 / .06);
@@ -85,9 +85,12 @@
     --ez-accent-text: #7DD3FC;
     --ez-accent-wash: #0A2334;
 
-    --ez-good:      #3DD68C;   --ez-good-wash: #06251A;
-    --ez-warn:      #E0A545;   --ez-warn-wash: #2A1F08;
-    --ez-crit:      #F0796C;   --ez-crit-wash: #2C1210;
+    /* The semantic fills invert in dark mode, so what sits on them has to
+       invert too: white on #F0796C is 2.7:1, and a destructive button is the
+       last place to put text nobody can read. */
+    --ez-good: #3DD68C; --ez-good-wash: #06251A; --ez-good-ink: #04231A;
+    --ez-warn: #E0A545; --ez-warn-wash: #2A1F08; --ez-warn-ink: #2A1B05;
+    --ez-crit: #F0796C; --ez-crit-wash: #2C1210; --ez-crit-ink: #2A0E0B;
 
     --ez-shadow-sm: 0 1px 2px rgb(0 0 0 / .4);
     --ez-shadow:    0 1px 2px rgb(0 0 0 / .35), 0 12px 30px rgb(0 0 0 / .45);
@@ -112,9 +115,12 @@
   --ez-accent-ink:  #052A3F;
   --ez-accent-text: #7DD3FC;
   --ez-accent-wash: #0A2334;
-  --ez-good: #3DD68C; --ez-good-wash: #06251A;
-  --ez-warn: #E0A545; --ez-warn-wash: #2A1F08;
-  --ez-crit: #F0796C; --ez-crit-wash: #2C1210;
+  /* The semantic fills invert in dark mode, so what sits on them has to
+     invert too: white on #F0796C is 2.7:1, and a destructive button is the
+     last place to put text nobody can read. */
+  --ez-good: #3DD68C; --ez-good-wash: #06251A; --ez-good-ink: #04231A;
+  --ez-warn: #E0A545; --ez-warn-wash: #2A1F08; --ez-warn-ink: #2A1B05;
+  --ez-crit: #F0796C; --ez-crit-wash: #2C1210; --ez-crit-ink: #2A0E0B;
   --ez-shadow-sm: 0 1px 2px rgb(0 0 0 / .4);
   --ez-shadow:    0 1px 2px rgb(0 0 0 / .35), 0 12px 30px rgb(0 0 0 / .45);
   --ez-shadow-lg: 0 28px 68px rgb(0 0 0 / .6);

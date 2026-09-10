@@ -203,7 +203,14 @@ td input.wide{width:100%}
 .drawer{width:min(620px,100%);height:100%;background:var(--ground);border-left:1px solid var(--border);box-shadow:-18px 0 48px rgba(0,0,0,.18);display:flex;flex-direction:column;animation:drawer-in .18s ease-out}
 @keyframes drawer-in{from{transform:translateX(24px);opacity:.4}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.drawer{animation:none}}
-.drawer-head{position:sticky;top:0;z-index:2;background:var(--surface);border-bottom:1px solid var(--border);padding:18px 22px 0}
+/* Grid, not block: the close button sits between the identity and the tags in
+   source order, so stacking put it on a row of its own halfway down the
+   header. It belongs in the top-right corner, where a close button is. */
+.drawer-head{position:sticky;top:0;z-index:2;background:var(--surface);border-bottom:1px solid var(--border);padding:18px 22px 0;
+  display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;column-gap:12px}
+.drawer-head>.drawer-id{grid-area:1/1}
+.drawer-head>.sbm-x{grid-area:1/2;justify-self:end}
+.drawer-head>.drawer-tags,.drawer-head>.drawer-tabs{grid-column:1/-1}
 .drawer-id{display:flex;align-items:center;gap:12px}
 .avatar-sm{width:40px;height:40px;border-radius:50%;background:var(--accent-wash);border:1px solid var(--accent);color:var(--accent-ink);display:grid;place-items:center;font-weight:900;flex:none}
 .drawer-idt{min-width:0;flex:1}

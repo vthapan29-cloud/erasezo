@@ -18,6 +18,16 @@ ok(/:root:not\(\[data-ez-theme="light"\]\):not\(\[data-theme="light"\]\)/.test(t
 ok(/:root\[data-theme="dark"\]/.test(tokens) && /:root\[data-ez-theme="dark"\]/.test(tokens),
    "an explicit dark choice is honoured under either attribute");
 
+/* The dark palette is written twice - once under prefers-color-scheme for the
+   OS default, once under the attribute for an explicit choice - because a
+   media query and a plain selector cannot share one rule. Two hand-kept
+   copies drift, and the drift is invisible until someone happens to open the
+   surface in the mode that was missed. */
+const darkBlocks = (tokens.match(/--ez-bg:[\s\S]*?\n\s*\}/g) || []).filter((b) => /#080E18/.test(b));
+const norm = (b) => b.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\s+/g, " ").trim();
+ok(darkBlocks.length === 2 && norm(darkBlocks[0]) === norm(darkBlocks[1]),
+   "both dark palettes declare the same values");
+
 /* One source of truth only stays true if the copies keep up. Editing
    public/tokens.css and forgetting sync-design.sh leaves the extension on the
    old palette, which looks like a CSS bug and is not one. */

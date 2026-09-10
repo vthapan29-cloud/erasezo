@@ -757,9 +757,10 @@
     if (!(u.ledger || []).length) l.appendChild(el("p", "sec-sub", "Nothing yet."));
     else {
       var list = el("div"); list.style.marginTop = "8px";
-      u.ledger.forEach(function (row) {
+      fold(u.ledger).forEach(function (row) {
         var d2 = el("div", "kv");
-        var left = el("span"); left.textContent = row.reason + " · " + fmtDate(row.created_at);
+        var left = el("span");
+        left.textContent = row.reason + " · " + fmtDate(row.created_at) + (row.n > 1 ? " · " + row.n + "×" : "");
         d2.appendChild(left);
         d2.appendChild(el("b", null, (row.delta > 0 ? "+" : "") + row.delta));
         list.appendChild(d2);
@@ -768,6 +769,26 @@
     }
     body.appendChild(l);
   }
+  /* Twenty rows of "image · 08/09/2026 · -1" is a receipt, not a history.
+   * Same reason on the same day collapses to one line carrying the count and
+   * the total. Deliberately the same shape as the one in dashboard.js: the
+   * two files cannot share a module without a third script tag in two HTML
+   * files and two sync scripts, so a test runs both copies against the same
+   * assertions instead. Rows arrive newest-first, so neighbours are enough. */
+  function fold(rows) {
+    var out = [];
+    rows.forEach(function (r) {
+      var day = String(r.created_at).slice(0, 10);
+      var last = out[out.length - 1];
+      if (last && last.reason === r.reason && last.day === day && (last.delta < 0) === (r.delta < 0)) {
+        last.delta += r.delta; last.n += 1;
+        return;
+      }
+      out.push({ reason: r.reason, day: day, created_at: r.created_at, delta: r.delta, n: 1 });
+    });
+    return out;
+  }
+
   function moveUserCredits(u, delta, reason) {
     if (!delta) { toast("Enter a non-zero amount"); return; }
     adminApi("/api/admin/users/" + u.userId + "/credits", { method: "POST", body: { delta: delta, reason: reason } })

@@ -89,20 +89,26 @@ async function get(path, uid) {
   // 7) The activity list folds same-day, same-reason rows. Run the real
   //    function out of the browser file rather than a copy of it, so renaming
   //    or rewriting it here fails loudly instead of silently diverging.
-  const src = require("fs").readFileSync(require("path").join(__dirname, "../public/dashboard.js"), "utf8");
-  const m = src.match(/function fold\(rows\) \{[\s\S]*?\n  \}/);
-  assert.ok(m, "public/dashboard.js still defines fold(rows)");
-  const fold = new Function(m[0] + "; return fold;")();
-  const folded = fold([
+  //    The dashboard and the Control Room each carry a copy - they cannot share
+  //    a module without a third script tag in two pages and two sync scripts -
+  //    so both copies run against the same assertions here, and a copy that
+  //    drifts fails rather than quietly behaving differently.
+  const rows = [
     { reason: "image", created_at: "2026-09-09T14:00:00Z", delta: -1 },
     { reason: "image", created_at: "2026-09-09T09:00:00Z", delta: -1 },
     { reason: "image", created_at: "2026-09-08T09:00:00Z", delta: -1 },
     { reason: "daily_free", created_at: "2026-09-08T00:00:00Z", delta: 15 },
-  ]);
-  assert.deepStrictEqual(folded.map((r) => [r.reason, r.n, r.delta]),
-    [["image", 2, -2], ["image", 1, -1], ["daily_free", 1, 15]],
-    "one line per reason per day, carrying the count and the total");
-  console.log("ok - the activity list folds a day's rows into one");
+  ];
+  for (const file of ["../public/dashboard.js", "../public/admin.js"]) {
+    const src = require("fs").readFileSync(require("path").join(__dirname, file), "utf8");
+    const m = src.match(/function fold\(rows\) \{[\s\S]*?\n  \}/);
+    assert.ok(m, file + " still defines fold(rows)");
+    const folded = new Function(m[0] + "; return fold;")()(rows);
+    assert.deepStrictEqual(folded.map((r) => [r.reason, r.n, r.delta]),
+      [["image", 2, -2], ["image", 1, -1], ["daily_free", 1, 15]],
+      file + ": one line per reason per day, carrying the count and the total");
+  }
+  console.log("ok - both ledger views fold a day's rows into one");
 
   server.close();
   console.log("\nALL DASHBOARD TESTS PASSED");
