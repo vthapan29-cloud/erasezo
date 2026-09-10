@@ -74,6 +74,36 @@ async function get(path, uid) {
   assert.strictEqual(spentRolled, spentRaw, "the chart's daily totals match the ledger rows");
   console.log("ok - the usage chart's rollup agrees with the underlying ledger");
 
+  // 6) The consume endpoint stores a reason from a known set, not from the
+  //    caller. Free text there put arbitrary client strings into the user's
+  //    own history and into the admin's view of it.
+  await fetch(base + "/api/credits/consume", {
+    method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, asUser(b)),
+    body: JSON.stringify({ amount: 1, note: "<script>alert(1)</script> free text" }),
+  });
+  const spent = await (await get("/api/usage", b)).json();
+  const reasons = new Set(spent.recent.map((r) => r.reason));
+  assert.ok(!Array.from(reasons).some((r) => /script|free text/.test(r)), "the caller cannot name its own ledger reason");
+  console.log("ok - ledger reasons come from a fixed set");
+
+  // 7) The activity list folds same-day, same-reason rows. Run the real
+  //    function out of the browser file rather than a copy of it, so renaming
+  //    or rewriting it here fails loudly instead of silently diverging.
+  const src = require("fs").readFileSync(require("path").join(__dirname, "../public/dashboard.js"), "utf8");
+  const m = src.match(/function fold\(rows\) \{[\s\S]*?\n  \}/);
+  assert.ok(m, "public/dashboard.js still defines fold(rows)");
+  const fold = new Function(m[0] + "; return fold;")();
+  const folded = fold([
+    { reason: "image", created_at: "2026-09-09T14:00:00Z", delta: -1 },
+    { reason: "image", created_at: "2026-09-09T09:00:00Z", delta: -1 },
+    { reason: "image", created_at: "2026-09-08T09:00:00Z", delta: -1 },
+    { reason: "daily_free", created_at: "2026-09-08T00:00:00Z", delta: 15 },
+  ]);
+  assert.deepStrictEqual(folded.map((r) => [r.reason, r.n, r.delta]),
+    [["image", 2, -2], ["image", 1, -1], ["daily_free", 1, 15]],
+    "one line per reason per day, carrying the count and the total");
+  console.log("ok - the activity list folds a day's rows into one");
+
   server.close();
   console.log("\nALL DASHBOARD TESTS PASSED");
   process.exit(0);

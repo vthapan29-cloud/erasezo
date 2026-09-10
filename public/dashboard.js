@@ -144,18 +144,23 @@
     pc.appendChild(pr);
     grid.appendChild(pc);
 
-    // Quick actions
+    // Quick actions. Two of these used to point at /tool and /guide, which are
+    // placeholder routes that redirect straight back here — a card that looks
+    // like an action and does nothing when you click it. Every one of them now
+    // goes somewhere that exists.
     var qa = card(host, "Quick actions");
     var acts = el("div", "actions");
     [
-      ["Remove watermarks", "Open the Erasezo tool.", "/tool"],
-      ["Get the extension", "Clean images right in your browser.", "/guide"],
-      ["Account settings", "Name, password and connected accounts.", null]
-    ].forEach(function (a, i) {
+      ["Get the extension", "Removal happens in the browser side panel.", function () {
+        window.open(STORE_URL, "_blank", "noopener");
+      }],
+      ["Plans & billing", "Daily allowance, invoices and upgrades.", function () { go("plans"); }],
+      ["Account settings", "Name, password and connected accounts.", function () { go("profile"); }]
+    ].forEach(function (a) {
       var b = el("button", "action");
       b.appendChild(el("b", null, a[0]));
       b.appendChild(el("span", null, a[1]));
-      b.addEventListener("click", function () { if (a[2]) location.href = a[2]; else go("profile"); });
+      b.addEventListener("click", a[2]);
       acts.appendChild(b);
     });
     qa.appendChild(acts);
@@ -165,25 +170,53 @@
     if (!usage) { ra.appendChild(el("p", "muted", "Loading…")); loadUsage(); }
     else if (!usage.recent.length) ra.appendChild(el("p", "muted", "Nothing yet. Credits you spend will show up here."));
     else {
-      ra.appendChild(ledgerList(usage.recent.slice(0, 5)));
+      ra.appendChild(ledgerList(usage.recent, 5));
       var rr = el("div", "row");
       rr.appendChild(btn("See all usage", "ghost", function () { go("usage"); }));
       ra.appendChild(rr);
     }
   }
 
+  /* The extension's own listing, the same one its review prompt links to. */
+  var STORE_URL = "https://chromewebstore.google.com/detail/erasio-%E2%80%93-gemini-omni-wate/aedhekmakfgbcknofpiccffacdjcgdpp";
+
   var REASONS = {
     daily_free: "Daily free credits", admin_grant: "Added by support", admin_deduct: "Adjusted by support",
     admin_adjust: "Adjusted by support", usage: "Watermark removed", image_clean: "Watermark removed",
-    usage_unlimited: "Watermark removed", goodwill: "Bonus credits", referral: "Referral bonus"
+    usage_unlimited: "Watermark removed", image: "Watermark removed", video: "Video cleaned",
+    batch: "Batch cleaned", goodwill: "Bonus credits", referral: "Referral bonus"
   };
-  function ledgerList(rows) {
-    var list = el("ul", "ledger");
+
+  /* Twenty rows reading "Watermark removed · -1" for the same afternoon is a
+   * receipt, not a history. Same reason on the same day folds into one line
+   * carrying the count and the total, which is the question someone opening
+   * this actually has. Rows are already newest-first from the server, so a
+   * single pass over neighbours is enough — no sorting, no grouping map. */
+  function fold(rows) {
+    var out = [];
     rows.forEach(function (r) {
+      var day = String(r.created_at).slice(0, 10);
+      var last = out[out.length - 1];
+      if (last && last.reason === r.reason && last.day === day && (last.delta < 0) === (r.delta < 0)) {
+        last.delta += r.delta; last.n += 1;
+        return;
+      }
+      out.push({ reason: r.reason, day: day, created_at: r.created_at, delta: r.delta, n: 1 });
+    });
+    return out;
+  }
+
+  function ledgerList(rows, limit) {
+    var list = el("ul", "ledger");
+    /* Fold first, then trim: five raw rows can be one afternoon's work, and
+       trimming first would have shown five lines saying the same thing. */
+    var folded = fold(rows);
+    (limit ? folded.slice(0, limit) : folded).forEach(function (r) {
       var li = el("li");
       var left = el("div");
       left.appendChild(el("b", null, REASONS[r.reason] || r.reason));
-      left.appendChild(el("span", "muted", fmtTime(r.created_at)));
+      left.appendChild(el("span", "muted",
+        fmtTime(r.created_at) + (r.n > 1 ? " · " + r.n + " times" : "")));
       li.appendChild(left);
       var amt = el("span", "delta " + (r.delta > 0 ? "up" : r.delta < 0 ? "down" : ""),
         (r.delta > 0 ? "+" : "") + r.delta);

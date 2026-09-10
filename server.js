@@ -343,7 +343,14 @@ app.post("/api/credits/consume", extCors, auth, async (req, res) => {
 
   await grantDailyIfNeeded(req.userId);
 
-  const reason = String((req.body && req.body.note) || "usage").slice(0, 60);
+  // The ledger is an accounting record, so its reason comes from a known set
+  // rather than from the caller's keyboard. It was free text, capped at 60
+  // chars: harmless to render (every surface writes it with textContent) but
+  // it let a client write arbitrary strings into their own history and into
+  // the admin's view of it, and it made the reason column impossible to group
+  // or total by.
+  const KINDS = { image: "image", video: "video", batch: "batch" };
+  const reason = KINDS[String((req.body && req.body.note) || "").toLowerCase()] || "usage";
   const left = await moveCredits(req.userId, -amount, reason, { requireBalance: true });
   if (left === null) {
     return res.status(402).json({
