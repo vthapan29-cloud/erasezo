@@ -66,7 +66,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-ez-theme="light"]) {
+  :root:not([data-ez-theme="light"]):not([data-theme="light"]) {
     --ez-bg:        #080E18;
     --ez-surface:   #0F1826;
     --ez-surface-2: #0B1320;
@@ -96,7 +96,8 @@
 }
 
 /* An explicit choice always wins over the OS. */
-:root[data-ez-theme="dark"] {
+:root[data-ez-theme="dark"],
+:root[data-theme="dark"] {
   --ez-bg:        #080E18;
   --ez-surface:   #0F1826;
   --ez-surface-2: #0B1320;
