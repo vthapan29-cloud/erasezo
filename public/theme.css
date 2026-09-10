@@ -282,3 +282,18 @@ button.rounded-full:hover, button.rounded-md:hover {
   border-color: color-mix(in srgb, var(--ez-warn) 45%, transparent);
   color: var(--ez-ink);
 }
+
+/* ---- one first-run thing at a time -----------------------------------
+   On a fresh install the six-step tour and the Google Flow notice both fire
+   into the panel at once. The tour lays a full-surface dim (or a spotlight
+   catch layer) over everything it is not pointing at, and the notice is never
+   one of its steps — so elementFromPoint over "Disable for Google Flow"
+   returns .erasio-tour-dim. The notice renders, reads as actionable, and
+   swallows every click until the whole tour is finished or skipped.
+
+   The notice is persistent — it stays until it is dismissed — so it loses
+   nothing by waiting. Hiding it for the duration is honest: a notice you
+   cannot act on should not be on screen pretending otherwise. It comes back
+   by itself the moment the tour's DOM goes away. */
+body:has(.erasio-tour-bubble) .flow-google-banner,
+body:has(.erasio-tour-bubble) .disabled-banner { display: none; }
