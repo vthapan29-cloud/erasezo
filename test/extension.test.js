@@ -63,9 +63,38 @@ const inj = fs.readFileSync(path.join(ext, "page/flowInjector.js"), "utf8");
 const epSrc = inj.match(/const MEDIA_ENDPOINT = String\.raw`([^`]*)`;/);
 ok(epSrc, "flowInjector defines the media endpoint once");
 const RE = new RegExp(epSrc[1], "i");
+// The three shapes, read off the live app rather than guessed. The third is
+// what flow.google.com serves today and it resembles neither of the others.
 ok(RE.test("/fx/api/trpc/media.getMediaUrlRedirect?name=abc"), "labs.google media URL matches");
-ok(RE.test("/api/trpc/media.getMediaUrlRedirect?name=abc"), "flow.google.com media URL matches");
+ok(RE.test("/api/trpc/media.getMediaUrlRedirect?name=abc"), "the same app at the root matches");
+ok(RE.test("https://flow.google.com/asb/AB-nOUa_-oaWkuDShsRi3LvuFlRY4oITyYeen9J9VLiF"),
+   "the Angular build's /asb/<token> URL matches — this is the one that was missing");
 ok(!RE.test("/api/trpc/media.list"), "an unrelated tRPC call is left alone");
+ok(!RE.test("/asb/short"), "a short path that happens to start /asb/ is not a media token");
+
+/* Flow ships its own marketing banners as .mp4 off gstatic, and the video
+   pattern's .mp4 catch-all matched one — a banner wearing a "clean this
+   watermark" button is worse than a tile without one. Found on the live page,
+   not in review. */
+const staticSrc = inj.match(/const STATIC_ASSET_RE = (\/.*\/i);/);
+ok(staticSrc, "flowInjector excludes static assets");
+const STATIC = eval(staticSrc[1]);
+ok(STATIC.test("https://www.gstatic.com/aitestkitchen/website/flow/banners/io2026-banner-28a.mp4"),
+   "a gstatic banner is not user media");
+ok(STATIC.test("https://ssl.gstatic.com/gb/images/ring/pr_32px.png"), "nor is a Google chrome asset");
+ok(!STATIC.test("https://flow.google.com/asb/AB-nOUa_-oaWkuDShsRi3Lvu"), "a real media URL is not excluded");
+
+/* The container names. data-tile-id was the Next.js build's and the Angular
+   rewrite dropped it entirely — the live page has zero of them — so the
+   current element names are listed too, and the structural fallback catches
+   whatever comes next. */
+const tileSel = inj.match(/const TILE_SELECTOR = \[([\s\S]*?)\]\.join/);
+ok(tileSel, "flowInjector lists the tile containers");
+for (const name of ["[data-tile-id]", "flow-image-tile", "flow-video-tile"]) {
+  ok(tileSel[1].includes('"' + name + '"'), "TILE_SELECTOR covers " + name);
+}
+ok(/const MEDIA_ID_SELECTOR = "\[data-tile-id\],\[data-media-id\]"/.test(inj),
+   "media identity reads both builds' id attributes");
 
 /* The same endpoint drives three patterns: the download interception, and the
    two src checks that decide whether a tile gets a button at all. It was
