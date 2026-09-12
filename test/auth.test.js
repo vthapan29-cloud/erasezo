@@ -80,6 +80,19 @@ async function req(path, opts) {
   assert.strictEqual(a, b, "daily reset idempotent within the same UTC day");
   console.log("ok - daily reset idempotent (no double credit)");
 
+  // 8) Google OAuth carries a CSRF state. Without it, a stolen `code` posted
+  //    at our callback would sign the attacker into the victim's browser.
+  process.env.GOOGLE_CLIENT_ID = "test-google-client";
+  const oauth = await fetch(base + "/api/auth/google", { redirect: "manual" });
+  assert.strictEqual(oauth.status, 302, "google auth redirects");
+  const loc = oauth.headers.get("location") || "";
+  assert.ok(/[?&]state=/.test(loc), "authorization URL includes state");
+  const setCookie = oauth.headers.get("set-cookie") || "";
+  assert.ok(/erasezo_oauth_state=/.test(setCookie), "state is stored in an httpOnly cookie");
+  const noState = await fetch(base + "/api/auth/google/callback?code=x", { redirect: "manual" });
+  assert.strictEqual(noState.status, 400, "callback without the state cookie is refused");
+  console.log("ok - Google OAuth rejects a callback that does not carry state");
+
   server.close();
   console.log("\nALL AUTH TESTS PASSED");
   process.exit(0);

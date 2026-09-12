@@ -181,7 +181,7 @@
   var STORE_URL = "https://chromewebstore.google.com/detail/erasio-%E2%80%93-gemini-omni-wate/aedhekmakfgbcknofpiccffacdjcgdpp";
 
   var REASONS = {
-    daily_free: "Daily free credits", admin_grant: "Added by support", admin_deduct: "Adjusted by support",
+    daily_free: "Daily free credits", quota_sync: "Plan allowance adjusted", admin_grant: "Added by support", admin_deduct: "Adjusted by support",
     admin_adjust: "Adjusted by support", usage: "Watermark removed", image_clean: "Watermark removed",
     usage_unlimited: "Watermark removed", image: "Watermark removed", video: "Video cleaned",
     batch: "Batch cleaned", goodwill: "Bonus credits", referral: "Referral bonus"

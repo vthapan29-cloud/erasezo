@@ -73,6 +73,8 @@ const asUser = (uid) => ({ Authorization: "Bearer " + jwt.sign({ uid }, "test-se
   // 4) Disable is the harder stop: no sign-in at all.
   await req("admin", `/api/admin/users/${sam}`, { method: "PATCH", body: { disabled: true } });
   assert.strictEqual((await req(null, "/api/auth/login", { method: "POST", body: { email: "sam@u.com", password: "UserPass123!" } })).status, 403, "a disabled account cannot sign in");
+  const dead = await fetch(base + "/api/credits/consume", { method: "POST", headers: Object.assign({ "Content-Type": "application/json" }, asUser(sam)), body: "{}" });
+  assert.strictEqual(dead.status, 403, "and an already-issued token cannot spend either");
   await req("admin", `/api/admin/users/${sam}`, { method: "PATCH", body: { disabled: false } });
   console.log("ok - disable blocks sign-in outright, a different thing from suspend");
 

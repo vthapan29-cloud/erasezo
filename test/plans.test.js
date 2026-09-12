@@ -90,8 +90,19 @@ const bearer = (uid, path, opts) => req(null, path, Object.assign({}, opts, { he
   await req("admin", `/api/admin/users/${proUid}`, { method: "PATCH", body: { subscription: { status: "active", plan: "pro" } } });
   st = (await (await bearer(proUid, "/api/credits/status")).json()).data;
   assert.strictEqual(st.limit, 500, "the pro plan's quota is what gets enforced");
+  assert.strictEqual(st.remaining, 500, "and the balance is topped up to that quota the same day");
   assert.strictEqual(st.kind, "paid");
   console.log("ok - an active subscription raises the allowance to its plan's quota");
+
+  // 5b) Switching back to Free must claw the leftover Pro pile — this is the
+  //     500/15 dashboard: quota followed the plan, the balance did not.
+  await req("admin", `/api/admin/users/${proUid}`, { method: "PATCH", body: { subscription: { status: "cancelled", plan: "pro" } } });
+  st = (await (await bearer(proUid, "/api/credits/status")).json()).data;
+  assert.strictEqual(st.limit, 15, "cancelled Pro falls back to free");
+  assert.strictEqual(st.remaining, 15, "and the leftover 500 is not kept");
+  console.log("ok - a downgrade syncs the balance to the new quota");
+
+  await req("admin", `/api/admin/users/${proUid}`, { method: "PATCH", body: { subscription: { status: "active", plan: "pro" } } });
 
   // 6) Unlimited never blocks, however much is spent.
   await req("admin", `/api/admin/users/${proUid}`, { method: "PATCH", body: { subscription: { status: "active", plan: "unlimited" } } });
@@ -144,6 +155,26 @@ const bearer = (uid, path, opts) => req(null, path, Object.assign({}, opts, { he
   await srv.grantDailyIfNeeded(idle);
   assert.strictEqual(await balance(idle), 15, "a day later it is topped up to 15, not to 30");
   console.log("ok - the daily grant tops up to the quota instead of stacking forever");
+
+  // 11b) A leftover Pro pile that never went through applyPlanAllowance is
+  //      still capped on the next daily grant / status poll — Visu's 500/15.
+  const stuck = (await db.query("insert into users(email, auth_provider) values ('stuck@u.com','password') returning id")).rows[0].id;
+  await srv.grantDailyIfNeeded(stuck);
+  assert.strictEqual(await balance(stuck), 15);
+  await db.query("update users set credit_balance = credit_balance + 485 where id=$1", [stuck]);
+  await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,485,'daily_free')", [stuck]);
+  st = (await (await bearer(stuck, "/api/credits/status")).json()).data;
+  assert.strictEqual(st.limit, 15);
+  assert.strictEqual(st.remaining, 15, "status poll claws the leftover Pro pile");
+  console.log("ok - a leftover higher-plan balance is capped on the next status poll");
+
+  // 11c) An admin bonus above the quota is not cancelled out by that cap.
+  const bonus = (await db.query("insert into users(email, auth_provider) values ('bonus@u.com','password') returning id")).rows[0].id;
+  await srv.grantDailyIfNeeded(bonus);
+  await req("admin", `/api/admin/users/${bonus}/credits`, { method: "POST", body: { delta: 100, reason: "admin_grant" } });
+  await srv.grantDailyIfNeeded(bonus);
+  assert.strictEqual(await balance(bonus), 115, "a support grant above the quota stays");
+  console.log("ok - an admin bonus above the quota is left alone");
 
   // 12) The ledger and the enforced counter must agree. Two stores means drift
   //     is the failure mode that matters, and it would show up as users being

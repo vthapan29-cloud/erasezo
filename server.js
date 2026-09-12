@@ -96,6 +96,8 @@ function clearAuthCookie(res) { res.clearCookie(COOKIE, { httpOnly: true, sameSi
  * separate lifetime: 12h rather than 7 days, since this one opens the panel. */
 const ADMIN_COOKIE = "erasezo_admin";
 const ADMIN_TTL_MS = 12 * 3600e3;
+const DISABLED_BODY = { error: "account_disabled", message: "This account has been disabled." };
+const OAUTH_STATE_COOKIE = "erasezo_oauth_state";
 function setAdminCookie(res, uid) {
   res.cookie(ADMIN_COOKIE, jwt.sign({ uid, adm: true }, JWT_SECRET, { expiresIn: "12h" }),
     { httpOnly: true, sameSite: "lax", secure: PROD, maxAge: ADMIN_TTL_MS });
@@ -120,10 +122,27 @@ function auth(req, res, next) {
   // requests are cross-site from a chrome-extension:// origin and so never
   // carry the SameSite=Lax cookie.
   const bearer = /^Bearer (.+)$/.exec(req.get("authorization") || "");
-  const t = (req.cookies && req.cookies[COOKIE]) || (bearer && bearer[1]);
+  const cookieTok = req.cookies && req.cookies[COOKIE];
+  const t = cookieTok || (bearer && bearer[1]);
   if (!t) return res.status(401).json({ error: "not_authenticated" });
-  try { req.userId = jwt.verify(t, JWT_SECRET).uid; next(); }
+  let payload;
+  try { payload = jwt.verify(t, JWT_SECRET); }
   catch (e) { return res.status(401).json({ error: "invalid_token" }); }
+  // Re-read disabled on every request: an admin disable must stop an already
+  // issued cookie or Bearer token, not only the next password/Google login.
+  db.query("select disabled from users where id=$1", [payload.uid]).then((r) => {
+    const u = r.rows[0];
+    if (!u) {
+      if (t === cookieTok) clearAuthCookie(res);
+      return res.status(401).json({ error: "not_authenticated" });
+    }
+    if (u.disabled) {
+      if (t === cookieTok) clearAuthCookie(res);
+      return res.status(403).json(DISABLED_BODY);
+    }
+    req.userId = payload.uid;
+    next();
+  }).catch(next);
 }
 const utcMidnight = () => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); return d.toISOString(); };
 
@@ -209,19 +228,47 @@ async function moveCredits(uid, delta, reason, { requireBalance = false } = {}) 
   return Number(r.rows[0].credit_balance);
 }
 
+/* Today's net admin adjustment. A support grant that puts someone above
+ * their quota is left alone; leftover Pro credits after a downgrade are not. */
+async function adminBonusCovers(uid, excess) {
+  const r = (await db.query(
+    "select coalesce(sum(delta),0)::int s from credit_ledger where user_id=$1 and created_at >= $2 and reason like 'admin%'",
+    [uid, utcMidnight()]
+  )).rows[0];
+  return Number(r.s) >= excess;
+}
+
+/* Move the daily counter onto the current plan's quota. Upgrade tops up;
+ * downgrade claws the leftover back. Called when the entitlement itself
+ * changes — not on every poll, or a spend would refill. */
+async function applyPlanAllowance(uid) {
+  const ent = await entitlement(uid);
+  if (ent.unlimited) return;
+  const bal = await balanceOf(uid);
+  const delta = ent.quota - bal;
+  if (delta === 0) return;
+  if (delta < 0 && await adminBonusCovers(uid, -delta)) return;
+  await moveCredits(uid, delta, "quota_sync");
+}
+
 /* Tops the balance UP TO the day's quota rather than adding to it. Adding meant
  * an account that sat idle for a fortnight came back with a fortnight's worth
  * of credits — the reason live accounts are sitting on 180. Topping up keeps
- * "N per day" honest, while an admin bonus that already puts someone above
- * their quota is left alone rather than being cancelled out. */
+ * "N per day" honest. A leftover from a higher plan is capped here so a
+ * Free account cannot keep spending yesterday's Pro pile; an admin bonus
+ * that already sits above the quota is left alone. */
 async function grantDailyIfNeeded(uid) {
+  const ent = await entitlement(uid);
+  if (ent.unlimited) return; // nothing to meter
+  const bal = await balanceOf(uid);
+  if (bal > ent.quota && !(await adminBonusCovers(uid, bal - ent.quota))) {
+    await moveCredits(uid, ent.quota - bal, "quota_sync");
+  }
   const already = (await db.query(
     "select 1 from credit_ledger where user_id=$1 and reason='daily_free' and created_at >= $2 limit 1",
     [uid, utcMidnight()]
   )).rows[0];
   if (already) return;
-  const ent = await entitlement(uid);
-  if (ent.unlimited) return; // nothing to meter
   const topUp = ent.quota - (await balanceOf(uid));
   if (topUp <= 0) return;
   await moveCredits(uid, topUp, "daily_free");
@@ -245,9 +292,8 @@ async function creditStatus(uid) {
 }
 
 /* A disabled account must be turned away at every door, not just the one the
- * ticket mentioned — password login, the extension's own login, and the Google
- * callback all funnel through here. */
-const DISABLED_BODY = { error: "account_disabled", message: "This account has been disabled." };
+ * ticket mentioned — password login, the extension's own login, the Google
+ * callback, and every already-issued session (auth() re-reads the flag). */
 
 /* Suspension expires on its own. Storing an end time rather than a boolean
  * means a temporary hold actually lifts itself — a flag someone has to remember
@@ -297,6 +343,7 @@ app.post("/api/auth/login", authLimiter, async (req, res) => {
 app.post("/api/auth/logout", (req, res) => { clearAuthCookie(res); res.json({ ok: true }); });
 
 app.get("/api/me", auth, async (req, res) => {
+  await grantDailyIfNeeded(req.userId);
   const u = await userPublic(req.userId);
   if (!u) { clearAuthCookie(res); return res.status(401).json({ error: "not_authenticated" }); }
   res.json(u);
@@ -461,6 +508,7 @@ app.post("/api/ext/refresh", extCors, authLimiter, async (req, res) => {
     const decoded = jwt.verify(String(req.body.refreshToken || ""), JWT_SECRET);
     const me = await userPublic(decoded.uid);
     if (!me) return res.status(401).json({ message: "invalid_token" });
+    if (me.disabled) return res.status(403).json(DISABLED_BODY);
     res.json(extSessionPayload(decoded.uid, me));
   } catch (e) { res.status(401).json({ message: "invalid_token" }); }
 });
@@ -814,6 +862,7 @@ app.patch("/api/admin/users/:id", adminAuth, async (req, res) => {
     if (q !== null && (!Number.isInteger(q) || q < 0 || q > 100000)) return res.status(400).json({ error: "bad_quota" });
     await db.query("update users set daily_quota=$1 where id=$2", [q, id]);
     audit(req, "user.quota", { targetType: "user", targetId: id, detail: { email: prev.email, from: prev.daily_quota, to: q } });
+    await applyPlanAllowance(id);
   }
   if (b.subscription) {
     const status = String(b.subscription.status || "none");
@@ -825,6 +874,7 @@ app.patch("/api/admin/users/:id", adminAuth, async (req, res) => {
       [id, status, plan]
     );
     audit(req, "user.subscription", { targetType: "user", targetId: id, detail: { email: prev.email, status: status, plan: plan } });
+    await applyPlanAllowance(id);
   }
   const r = (await db.query(`${USER_SELECT} where u.id = $2`, [utcMidnight(), id])).rows[0];
   if (!r) return res.status(404).json({ error: "not_found" });
@@ -1098,6 +1148,8 @@ async function mergeOrCreateGoogleUser(info) {
 /* ---------- Google OAuth (server-side code flow, merge by email) ---------- */
 app.get("/api/auth/google", (req, res) => {
   if (!process.env.GOOGLE_CLIENT_ID) return res.status(500).send("Google OAuth not configured (GOOGLE_CLIENT_ID missing).");
+  const state = crypto.randomBytes(16).toString("hex");
+  res.cookie(OAUTH_STATE_COOKIE, state, { httpOnly: true, sameSite: "lax", secure: PROD, maxAge: 10 * 60e3 });
   const p = new URLSearchParams({
     client_id: process.env.GOOGLE_CLIENT_ID,
     redirect_uri: APP_URL + "/api/auth/google/callback",
@@ -1105,12 +1157,19 @@ app.get("/api/auth/google", (req, res) => {
     scope: "openid email profile",
     access_type: "offline",
     prompt: "select_account",
+    state,
   });
   res.redirect("https://accounts.google.com/o/oauth2/v2/auth?" + p.toString());
 });
 
 app.get("/api/auth/google/callback", async (req, res) => {
   try {
+    const expected = String((req.cookies && req.cookies[OAUTH_STATE_COOKIE]) || "");
+    const got = String(req.query.state || "");
+    res.clearCookie(OAUTH_STATE_COOKIE, { httpOnly: true, sameSite: "lax", secure: PROD });
+    if (!expected || expected.length !== got.length || !crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got))) {
+      return res.status(400).send("Sign-in failed. Please try again.");
+    }
     const code = req.query.code;
     if (!code) return res.status(400).send("Missing code");
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -1209,6 +1268,7 @@ app.post("/api/webhooks/razorpay", async (req, res) => {
        provider='razorpay', current_period_end=$5, updated_at=now()`,
     [uid, sub.id || null, status, notes.plan || sub.plan_id || null, periodEnd]
   );
+  await applyPlanAllowance(uid);
   res.json({ ok: true });
 });
 
@@ -1304,4 +1364,4 @@ async function start() {
 }
 if (require.main === module) start().catch((e) => { console.error("boot failed:", e); process.exit(1); });
 
-module.exports = { app, start, db, userPublic, grantDailyIfNeeded, mergeOrCreateGoogleUser, dailyResetAll, ensureAdminFromEnv };
+module.exports = { app, start, db, userPublic, grantDailyIfNeeded, applyPlanAllowance, mergeOrCreateGoogleUser, dailyResetAll, ensureAdminFromEnv };

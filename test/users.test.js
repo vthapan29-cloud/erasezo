@@ -109,6 +109,13 @@ function rzpPost(payload, { secret = "whsec-test", eventId = null } = {}) {
   await req("admin", `/api/admin/users/${pw.userId}`, { method: "PATCH", body: { disabled: true } });
   assert.strictEqual((await req(null, "/api/auth/login", { method: "POST", body: { email: "pw@user.com", password: "UserPass123!" } })).status, 403, "site login refuses a disabled account");
   assert.strictEqual((await req(null, "/api/ext/login", { method: "POST", body: { email: "pw@user.com", password: "UserPass123!" } })).status, 403, "extension login refuses it too");
+  const jwt = require("jsonwebtoken");
+  const deadTok = jwt.sign({ uid: pw.userId }, "test-secret", { expiresIn: "1h" });
+  const deadHdr = { Authorization: "Bearer " + deadTok, "Content-Type": "application/json" };
+  assert.strictEqual((await fetch(base + "/api/me", { headers: deadHdr })).status, 403, "an already-issued Bearer token cannot read /api/me");
+  assert.strictEqual((await fetch(base + "/api/credits/consume", { method: "POST", headers: deadHdr, body: "{}" })).status, 403, "nor spend credits");
+  assert.strictEqual((await fetch(base + "/api/credits/status", { headers: deadHdr })).status, 403, "nor poll the meter");
+  assert.strictEqual((await fetch(base + "/api/ext/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ refreshToken: deadTok }) })).status, 403, "nor mint a fresh token");
   await db.query("update users set disabled=true where id=$1", [gUid]);
   await assert.rejects(() => srv.mergeOrCreateGoogleUser({ email: "goog@user.com", sub: "google-oauth-123" }), /account_disabled/, "Google sign-in is not a way around being disabled");
   console.log("ok - a disabled account is refused at every sign-in path");
