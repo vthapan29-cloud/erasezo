@@ -164,6 +164,36 @@ ok(!/chrome\.storage\.local\.(get|set|remove)\(/.test(wb),
    "webBridge routes every storage call through its own guard");
 ok(/clearInterval\(pollTimer\)/.test(wb), "and stops polling once the context is gone");
 ok(/__erasezoAdmin: "stale"/.test(wb), "and says so, instead of going silent");
+ok(wb.includes("erasioWebsiteLogoutPending"), "webBridge consumes the extension-logout flag");
+ok(wb.includes("/api/auth/logout"), "and clears the website session cookie");
+
+/* A timed-out credit gate used to resolve allowed:true, so a slow or dead
+   worker let processing through for free. Fail closed. */
+for (const f of ["page/flowInjector.js", "page/interceptor.js", "page/geminiInjector.js", "page/docsInjector.js", "page/videoInterceptor.js"]) {
+  const src = fs.readFileSync(path.join(ext, f), "utf8");
+  ok(src.includes('allowed: false, reason: "timeout"'), f + " denies on gate timeout");
+  ok(!src.includes('allowed: true, reason: "timeout"'), f + " does not fail open");
+}
+const bus = fs.readFileSync(path.join(ext, "assets/messageBus.js-D35ja-JI.js"), "utf8");
+const gem = fs.readFileSync(path.join(ext, "page/geminiInjector.js"), "utf8");
+ok(gem.includes("async function processImageAndSave"), "Gemini images get an Erasezo button");
+ok(!/kind === "image"\) \{\s*markImageTile\(host, media\);\s*return;/.test(gem),
+   "Gemini no longer skips the image button");
+ok(gem.includes("drawing the on-page image"),
+   "Gemini falls back to the displayed image when blob: fetch is blocked");
+
+const pv = fs.readFileSync(path.join(ext, "page/preview.js"), "utf8");
+ok(pv.includes("--ez-accent:#0369A1"), "preview light accent matches tokens.css");
+ok(pv.includes("--ez-accent-ink:#052A3F"), "preview dark accent-ink is dark-on-cyan");
+ok(pv.includes("--ez-good-ink:#04231A"), "preview dark Clean/success ink matches tokens");
+ok(!pv.includes("#00d4cf") && !/#38bdf8/.test(pv),
+   "preview no longer uses the old teal/cyan literals");
+ok(pv.includes(".erasio-ip-ring.err { background: var(--ez-crit); color: var(--ez-crit-ink); }"),
+   "the Gemini error toast uses the semantic crit pair, not a hardcoded red");
+
+ok(bus.includes('WEBSITE_BASE="https://erasezo.com"'), "sign-in links point at erasezo.com");
+ok(!bus.includes("erasio.io"), "messageBus does not send users to erasio.io");
+ok(!boot.includes("https://erasio.io/tool"), "upsell does not open erasio.io");
 
 /* Going silent is the dangerous half: the Control Room's bridge times out
    after 800ms and falls back to localStorage, so a stale tab would look like
