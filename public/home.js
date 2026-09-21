@@ -8,13 +8,15 @@
 (function () {
   "use strict";
 
-  var STORE_URL = "https://chromewebstore.google.com/detail/erasio-%E2%80%93-gemini-omni-wate/aedhekmakfgbcknofpiccffacdjcgdpp";
-  ["installTop", "installHero", "installEnd"].forEach(function (id) {
+  // Honest in-page destination. There is no Erasezo CWS listing yet; sending
+  // people to Erasio's was a lie. Same-page hash, not a new tab.
+  var STORE_URL = "#get-extension";
+  ["installTop", "installHero"].forEach(function (id) {
     var a = document.getElementById(id);
     if (!a) return;
     a.href = STORE_URL;
-    a.target = "_blank";
-    a.rel = "noopener";
+    a.removeAttribute("target");
+    a.removeAttribute("rel");
   });
 
   /* ---- menu ---- */
@@ -129,11 +131,12 @@
   var host = document.getElementById("plans");
   var note = document.getElementById("planNote");
 
-  fetch("/api/plans")
+  if (host) fetch("/api/plans")
     .then(function (r) { return r.ok ? r.json() : null; })
     .catch(function () { return null; })
     .then(function (data) {
       var plans = data && data.plans;
+      var paymentsOn = !!(data && data.paymentsConfigured);
       if (!plans || !plans.length) {
         // Say nothing rather than something wrong. An invented price is worse
         // than an absent one.
@@ -156,11 +159,19 @@
         card.appendChild(el("p", "quota",
           p.unlimited ? "Unlimited files per day" : p.dailyQuota + " files per day"));
 
-        var cta = el("a", "btn" + (paid ? "" : " ghost"), paid ? "Choose " + p.name : "Start free");
-        cta.href = paid ? "/dashboard" : "/login";
-        card.appendChild(cta);
+        // Paid "Choose …" buttons only when checkout can actually run. Free
+        // stays offered regardless — it never goes through Razorpay.
+        if (!paid || paymentsOn) {
+          var cta = el("a", "btn" + (paid ? "" : " ghost"), paid ? "Choose " + p.name : "Start free");
+          cta.href = paid ? "/dashboard" : "/login";
+          card.appendChild(cta);
+        }
         host.appendChild(card);
       });
-      if (note) note.textContent = "Prices in INR, billed monthly. Cancel any time from your dashboard.";
+      if (note) {
+        note.textContent = paymentsOn
+          ? "Prices in INR, billed monthly. Cancel any time from your dashboard."
+          : "Prices in INR. Paid checkout is not switched on yet — the free plan is available now.";
+      }
     });
 })();

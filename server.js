@@ -515,6 +515,12 @@ app.post("/api/ext/refresh", extCors, authLimiter, async (req, res) => {
 
 /* ---------- what the signed-in user's own dashboard needs ---------- */
 
+// Same gate checkout uses. Home reads this so it does not paint a "Choose Pro"
+// button that 503s the moment someone clicks it.
+function paymentsConfigured() {
+  return !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET);
+}
+
 // The tiers on offer. Public because the upgrade view has to render before
 // anyone subscribes; razorpay_plan_id is deliberately not included — that is
 // operational detail, not something a visitor needs.
@@ -523,6 +529,7 @@ app.get("/api/plans", async (req, res) => {
     "select id, name, daily_quota, price_inr from plans where active = true order by sort_order, id"
   )).rows;
   res.json({
+    paymentsConfigured: paymentsConfigured(),
     plans: rows.map((p) => ({
       id: p.id, name: p.name, dailyQuota: p.daily_quota,
       unlimited: p.daily_quota < 0, priceInr: p.price_inr,
@@ -544,8 +551,8 @@ app.get("/api/plans", async (req, res) => {
  * Returns 503, not 500, when the keys are missing: not configured yet is a
  * different thing from broken, and the dashboard says so in those words. */
 app.post("/api/billing/checkout", auth, async (req, res) => {
+  if (!paymentsConfigured()) return res.status(503).json({ error: "not_configured" });
   const keyId = process.env.RAZORPAY_KEY_ID, keySecret = process.env.RAZORPAY_KEY_SECRET;
-  if (!keyId || !keySecret) return res.status(503).json({ error: "not_configured" });
 
   const plan = (await db.query(
     "select id, name, razorpay_plan_id from plans where id=$1 and active = true", [String(req.body.planId || "")]
@@ -1296,16 +1303,16 @@ app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", 
 // root-absolute, which resolves identically here and at the extension root —
 // same file, no build step, no trailing-slash edge case.
 app.get("/admin", (req, res) => res.sendFile(path.join(__dirname, "public", "admin.html")));
+app.get("/privacy", (req, res) => res.sendFile(path.join(__dirname, "public", "privacy.html")));
 /* The extension's sidepanel links out to these paths. They used to point at
  * erasio.io — a third party — so every one of them sent our own users to
  * someone else's site. They point here now, and these redirects make sure that
  * lands somewhere real instead of a 404. Replace with actual pages as they
- * get written. */
+ * get written. /privacy used to live here; it is a real page now. */
 const LINK_REDIRECTS = {
   "/register": "/login", "/signup": "/login", "/forgot-password": "/login",
   "/subscribe": "/dashboard", "/dashboard/settings": "/dashboard",
   "/tool": "/dashboard", "/guide": "/dashboard", "/contact": "/dashboard",
-  "/privacy": "/dashboard",
   "/image-watermark-removal-settings-guide": "/dashboard",
   "/video-watermark-removal-settings-guide": "/dashboard",
 };

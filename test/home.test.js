@@ -83,13 +83,50 @@ const js = fs.readFileSync(path.join(pub, "home.js"), "utf8");
   const plans = await (await fetch(base + "/api/plans")).json();
   assert.ok(plans.plans.length, "and that endpoint has something to give it");
   assert.ok(plans.plans.every((p) => !("razorpayPlanId" in p)), "still no billing ids in the public payload");
+  assert.strictEqual(plans.paymentsConfigured, false,
+    "test env has no Razorpay keys, so paymentsConfigured is false");
+  assert.ok(/paymentsConfigured/.test(js) && /paymentsOn/.test(js),
+    "home gates paid CTAs on the same flag checkout uses");
+  assert.ok(/if \(!paid \|\| paymentsOn\)/.test(js),
+    "Pro/Unlimited buy CTAs render only when payments are configured; Free always does");
   console.log("ok - pricing is read from the same table the server bills against");
 
-  /* 4) Every outbound link opens away from the page and cannot reach back
-        into it through window.opener. */
-  assert.ok(/rel = "noopener"/.test(js) || /rel="noopener"/.test(js),
-    "the store links are opened with noopener");
-  console.log("ok - outbound links carry noopener");
+  /* 4) Install CTAs must not send anyone to Erasio's Chrome Web Store listing.
+        There is no Erasezo listing yet; the honest destination is the in-page
+        #get-extension section (waitlist / load-unpacked). The CWS id below is
+        Erasio's — if it reappears on an install href or STORE_URL, this fails. */
+  const CWS_ID = "aedhekmakfgbcknofpiccffacdjcgdpp";
+  const dashJs = fs.readFileSync(path.join(pub, "dashboard.js"), "utf8");
+  const installHrefs = [
+    ...html.matchAll(/id="install\w+"[^>]*href="([^"]*)"/g),
+    ...html.matchAll(/href="([^"]*)"[^>]*id="install\w+"/g),
+  ].map((m) => m[1]);
+  const storeUrl = (js.match(/STORE_URL\s*=\s*"([^"]*)"/) || [null, ""])[1];
+  for (const u of installHrefs.concat([storeUrl])) {
+    assert.ok(!/erasio/i.test(u), "install href / STORE_URL must not mention erasio: " + u);
+    assert.ok(!u.includes(CWS_ID), "install href / STORE_URL must not be the Erasio CWS id: " + u);
+  }
+  assert.ok(installHrefs.length >= 2, "header and hero install buttons exist");
+  assert.ok(!html.includes(CWS_ID) && !js.includes(CWS_ID) && !dashJs.includes(CWS_ID),
+    "the Erasio CWS id is gone from home and dashboard scripts");
+  assert.ok(!/chromewebstore\.google\.com/.test(html + js + dashJs),
+    "no Chrome Web Store URL on install paths");
+  assert.ok(/id="get-extension"/.test(html), "home has a #get-extension section");
+  assert.ok(storeUrl === "#get-extension", "STORE_URL is the in-page section");
+  assert.ok(installHrefs.every((u) => u === "#get-extension"), "markup install hrefs match STORE_URL");
+  assert.ok(/\/#get-extension/.test(dashJs), "dashboard Get the extension goes to /#get-extension");
+  console.log("ok - install CTAs point at #get-extension, not Erasio");
+
+  /* 4b) /privacy is a real page, not a 302 to the dashboard. */
+  const privFile = fs.readFileSync(path.join(pub, "privacy.html"), "utf8");
+  assert.ok(!/\sstyle="/.test(privFile), "privacy.html carries no style attribute for the CSP to drop");
+  const priv = await get("/privacy");
+  assert.strictEqual(priv.status, 200, "/privacy serves the policy");
+  assert.ok(!priv.headers.get("location"), "/privacy does not redirect");
+  const privBody = await priv.text();
+  assert.ok(/Privacy/.test(privBody) && /erasezo\.com/.test(privBody), "the policy is actually there");
+  assert.ok(/cookie/i.test(privBody) && /Razorpay/.test(privBody), "cookies and payments are covered");
+  console.log("ok - GET /privacy is 200 with a policy, not a dashboard redirect");
 
   /* 5) One heading per level, in order, and a skip link first in the tab
         order — the two structural things a screen reader user notices. */
