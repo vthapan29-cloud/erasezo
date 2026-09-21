@@ -160,14 +160,13 @@ Tests are plain Node with `assert`. No framework, no fixtures. Postgres is
 
 Don't be surprised by these; they are not bugs to fix in passing.
 
-- **No privacy policy page.** `/privacy` redirects to `/dashboard`. The Web
-  Store requires one before the extension can be updated.
 - **No password reset.** No mailer dependency exists at all, and admins cannot
   reset a password either. A password user who forgets is locked out unless
   their email is a Google account.
 - **Razorpay is unconfigured.** Checkout and the webhook are written and tested
-  against a stub; no keys are set. See `erasezo-web/RAZORPAY.md`.
-- **Six placeholder routes** (`/tool`, `/guide`, `/contact`, `/privacy`, two
+  against a stub; no keys are set. See `erasezo-web/RAZORPAY.md`. Home hides
+  paid buy CTAs until `/api/plans` reports `paymentsConfigured`.
+- **Five placeholder routes** (`/tool`, `/guide`, `/contact`, two
   guide URLs) redirect to `/dashboard` so links out of the extension don't 404.
 - **4K and upscaled 1080p Flow video are unsupported.** The panel says so
   rather than producing a bad correction.

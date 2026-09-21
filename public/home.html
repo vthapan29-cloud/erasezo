@@ -15,78 +15,222 @@
 <body>
 <a class="skip" href="#main">Skip to content</a>
 
-<header class="site-head">
-  <div class="wrap head-in">
-    <a class="brand" href="/"><img src="/mark.png" alt="" width="30" height="30">Erasezo</a>
-    <button class="navtoggle" id="navToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Menu">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
-    </button>
-    <nav class="site-nav" id="siteNav" aria-label="Main">
-      <a href="#how">How it works</a>
-      <a href="#where">Where it runs</a>
-      <a href="#control">Controls</a>
-      <a href="#pricing">Pricing</a>
-      <a href="#faq">FAQ</a>
-    </nav>
-    <div class="head-cta">
-      <!-- Real control: tokens.css answers to data-theme, so this switches the
-           whole page, and the sidepanel and Control Room use the same key. -->
-      <button class="iconbtn" id="themeBtn" aria-label="Switch to dark theme" title="Theme">
-        <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-        <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+<div class="sticky-stack">
+  <div class="announce" id="announce" hidden>
+    <div class="wrap announce-in">
+      <p>
+        Chrome Web Store listing is on the way.
+        <a href="#get-extension">Load unpacked</a>, or create an account for 15 free credits a day.
+      </p>
+      <button type="button" class="announce-x" id="announceDismiss" aria-label="Dismiss announcement">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
-      <a class="btn ghost sm" href="/login" id="signinLink">Sign in</a>
-      <a class="btn sm" id="installTop" href="#">
-        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>
-        Install Extension
-      </a>
     </div>
   </div>
-</header>
+
+  <header class="site-head">
+    <div class="wrap head-in">
+      <a class="brand" href="/"><img src="/mark.png" alt="" width="30" height="30">Erasezo</a>
+      <button class="navtoggle" id="navToggle" aria-expanded="false" aria-controls="siteNav" aria-label="Menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+      </button>
+      <nav class="site-nav" id="siteNav" aria-label="Main">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#live-demo">Demo</a>
+        <a href="#pricing">Pricing</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <div class="head-cta">
+        <!-- Real control: tokens.css answers to data-theme, so this switches the
+             whole page, and the sidepanel and Control Room use the same key. -->
+        <button class="iconbtn" id="themeBtn" aria-label="Switch to dark theme" title="Theme">
+          <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        </button>
+        <a class="btn ghost sm" href="/login" id="signinLink">Sign in</a>
+        <a class="btn sm" id="installTop" href="#get-extension">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>
+          Get the extension
+        </a>
+      </div>
+    </div>
+  </header>
+</div>
 
 <main id="main">
 
   <!-- ---------- hero ---------- -->
-  <section class="hero">
+  <section class="hero" id="hero">
     <div class="hero-grid" aria-hidden="true"></div>
     <div class="wrap hero-in">
       <div class="hero-copy">
         <div class="hero-tags">
           <span class="pill"><span class="dot live"></span>Chrome extension</span>
-          <!-- Not decoration: these switch what the frame on the right shows. -->
-          <div class="seg" role="group" aria-label="Preview mode">
-            <button type="button" class="on" data-mode="image" aria-pressed="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 4 4 2-2 5 5"/></svg>
-              Images
-            </button>
-            <button type="button" data-mode="video" aria-pressed="false">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4M16 5v4"/></svg>
-              Video
-            </button>
-          </div>
+          <span class="pill">Images + video</span>
         </div>
 
         <h1>Remove the watermark.<br><span class="grad">Keep the pixels.</span></h1>
-        <p class="hero-sub">from images &amp; video</p>
+        <p class="hero-sub">from images &amp; video you generate</p>
         <p class="lede">
           Erasezo strips the stamp from what you generate in <b>Gemini, AI Studio and
-          Google Flow</b> — no manual steps, no second tool, no upload. The work happens
+          Google Flow</b> — no second tool, no upload. The work happens
           on your machine and you get the file back clean.
         </p>
         <div class="hero-cta">
-          <a class="btn lg" id="installHero" href="#">
+          <a class="btn lg" id="installHero" href="#get-extension">
             <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M12 8v8M8 12h8"/></svg>
-            Install Chrome Extension
+            Get the extension
           </a>
-          <a class="btn ghost lg" href="#how">See how it works</a>
+          <a class="btn ghost lg" href="#live-demo">See the difference</a>
         </div>
-        <p class="hero-note">15 free credits a day. No card to start.</p>
+        <p class="hero-note">15 free credits a day with an account. No card to start.</p>
       </div>
 
-      <!-- The frame. The artwork inside is drawn, not photographed: this
-           demonstrates the mechanic — mark present, mark gone — without
-           dressing a stock image up as somebody's real output. -->
-      <figure class="demo" id="demo" data-mode="image">
+      <!-- Decorative product mock. The interactive compare lives in #live-demo
+           so this frame can animate without competing with a real slider. -->
+      <figure class="demo hero-demo" aria-hidden="true">
+        <div class="frame">
+          <div class="frame-bar">
+            <span class="tl"></span><span class="tl"></span><span class="tl"></span>
+            <span class="url">gemini.google.com</span>
+            <span class="active"><span class="dot live"></span>Erasezo active</span>
+          </div>
+          <div class="stage auto">
+            <div class="art">
+              <span class="sparkle"></span>
+              <span class="scanline"></span>
+            </div>
+            <div class="art clean"></div>
+            <span class="seam"></span>
+            <span class="tagline after">Cleaned</span>
+            <span class="tagline before">Original</span>
+          </div>
+        </div>
+        <figcaption class="float-card">
+          <span class="fc-ic">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 13 4 4L19 7"/></svg>
+          </span>
+          <span>
+            <b>Watermark removed</b>
+            <small>On your device · nothing uploaded</small>
+          </span>
+        </figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ---------- explainer ---------- -->
+  <section id="watch">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">See Erasezo in ~60s</p>
+        <h2>A walkthrough when we have one to show.</h2>
+        <p class="lede">
+          There is no recorded demo to embed yet, so this slot stays empty rather
+          than pointing at a video we do not have. The live compare below is the
+          actual mechanic.
+        </p>
+      </div>
+      <div class="watch-slot reveal">
+        <div class="watch-frame">
+          <p class="watch-kicker">Walkthrough</p>
+          <p>Nothing is embedded here. When a real recording exists, it will sit in this frame.</p>
+          <a class="btn ghost" href="#live-demo">Skip to the live demo</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- benefits ---------- -->
+  <section id="benefits">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">On your device</p>
+        <h2>Your files never leave the browser.</h2>
+        <p class="lede">
+          The removal runs in the page, on your own hardware. There is no upload step,
+          no queue, and no copy of your work on a server — because there is no server in
+          the path at all.
+        </p>
+      </div>
+      <div class="grid g4">
+        <article class="card reveal">
+          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg></div>
+          <h3>Works while you work</h3>
+          <p>Turn on auto-removal and the watermark is gone as the file downloads. You keep generating; Erasezo stays in the panel.</p>
+        </article>
+        <article class="card reveal">
+          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
+          <h3>Zero extra steps</h3>
+          <p>No second site, no export-import round trip. Gemini and AI Studio downloads are cleaned in place; Flow gets a button on each tile.</p>
+        </article>
+        <article class="card reveal">
+          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></div>
+          <h3>Local files</h3>
+          <p>Drop a PNG, JPG, WebP or MP4 straight into the side panel if it did not come from a supported page.</p>
+        </article>
+        <article class="card reveal">
+          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <h3>Nothing is uploaded</h3>
+          <p>Images and video are decoded, cleaned and saved locally. Your account only ever exchanges sign-in and credit counts. <a href="/privacy">Privacy</a></p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- how ---------- -->
+  <section id="how">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="eyebrow">How it works</p>
+        <h2>Three steps, then it stays out of the way.</h2>
+      </div>
+      <div class="grid g3">
+        <article class="step reveal">
+          <span class="n">01</span>
+          <h3>Install and sign in</h3>
+          <p>Add the extension, open the side panel, and sign in. You get 15 credits a day without paying anything — an account is required so those credits have somewhere to live.</p>
+        </article>
+        <article class="step reveal">
+          <span class="n">02</span>
+          <h3>Generate as you normally would</h3>
+          <p>Erasezo puts a button on each generated tile in Flow, and cleans downloads from Gemini and AI Studio in place.</p>
+        </article>
+        <article class="step reveal">
+          <span class="n">03</span>
+          <h3>Take the clean file</h3>
+          <p>Or drop any image or MP4 straight into the panel — PNG, JPG and WebP for stills, 720p and 1080p for video.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- live demo ---------- -->
+  <section id="live-demo">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Live demo</p>
+        <h2>See the difference instantly</h2>
+        <p class="lede">
+          Drag to compare the marked illustration with the cleaned copy.
+          This is a drawing of the mechanic, not a photograph of someone else's output.
+        </p>
+      </div>
+      <div class="demo-switch">
+        <div class="seg" role="group" aria-label="Demo mode">
+          <button type="button" class="on" data-mode="image" aria-pressed="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m4 17 5-5 4 4 2-2 5 5"/></svg>
+            Image
+          </button>
+          <button type="button" data-mode="video" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18M8 5v4M16 5v4"/></svg>
+            Video
+          </button>
+        </div>
+        <p class="demo-mode-note">Illustration only — no recorded clip is attached to Video.</p>
+      </div>
+      <figure class="demo live-demo" id="demo" data-mode="image">
         <div class="frame">
           <div class="frame-bar">
             <span class="tl"></span><span class="tl"></span><span class="tl"></span>
@@ -120,60 +264,30 @@
     </div>
   </section>
 
-  <!-- ---------- privacy ---------- -->
-  <section id="privacy">
+  <!-- ---------- features ---------- -->
+  <section id="features">
     <div class="wrap">
       <div class="section-head">
-        <p class="eyebrow">On your device</p>
-        <h2>Your files never leave the browser.</h2>
-        <p class="lede">
-          The removal runs in the page, on your own hardware. There is no upload step,
-          no queue, and no copy of your work on a server — because there is no server in
-          the path at all.
-        </p>
+        <p class="eyebrow">Features</p>
+        <h2>What the extension actually does.</h2>
+        <p class="lede">Each of these is a behaviour in the panel, not a slogan. Surfaces match the places Google puts a watermark on something you made.</p>
       </div>
-      <div class="grid g3">
-        <article class="card">
-          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
-          <h3>Nothing is uploaded</h3>
-          <p>Images and video are decoded, cleaned and saved locally. Your account only ever exchanges sign-in and credit counts.</p>
+      <div class="grid g2">
+        <article class="card feature reveal">
+          <h3>Pixel-accurate local inverse</h3>
+          <p>The detector matches Google's sparkle and inverts the blend on your hardware. It is not a guess over the region and it does not send the file anywhere to be guessed.</p>
         </article>
-        <article class="card">
-          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-          <h3>No queue to wait in</h3>
-          <p>Nothing is batched on someone else's GPU. The work starts the moment you click and finishes at the speed of your machine.</p>
+        <article class="card feature reveal">
+          <h3>Auto on download</h3>
+          <p>On Gemini and AI Studio, a download can come back already cleaned. No extra export, no second pass through another site.</p>
         </article>
-        <article class="card">
-          <div class="ic-tile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l3 2"/></svg></div>
-          <h3>Works while you generate</h3>
-          <p>Turn on auto-removal and the watermark is gone as the file downloads, without a second round trip through another tool.</p>
+        <article class="card feature reveal">
+          <h3>Images and video</h3>
+          <p>Stills as PNG, JPG or WebP. Video as MP4 at 720p or 1080p. 4K and upscaled 1080p Flow exports are refused rather than badly corrected.</p>
         </article>
-      </div>
-    </div>
-  </section>
-
-  <!-- ---------- how ---------- -->
-  <section id="how">
-    <div class="wrap">
-      <div class="section-head">
-        <p class="eyebrow">How it works</p>
-        <h2>Three steps, then it stays out of the way.</h2>
-      </div>
-      <div class="grid g3">
-        <article class="step">
-          <span class="n">01</span>
-          <h3>Install and sign in</h3>
-          <p>Add the extension, open the side panel, and sign in. You get 15 credits a day without paying anything.</p>
-        </article>
-        <article class="step">
-          <span class="n">02</span>
-          <h3>Generate as you normally would</h3>
-          <p>Erasezo puts a button on each generated tile in Flow, and cleans downloads from Gemini and AI Studio in place.</p>
-        </article>
-        <article class="step">
-          <span class="n">03</span>
-          <h3>Take the clean file</h3>
-          <p>Or drop any image or MP4 straight into the panel — PNG, JPG and WebP for stills, 720p and 1080p for video.</p>
+        <article class="card feature reveal">
+          <h3>Four surfaces, one panel</h3>
+          <p>Gemini, Google AI Studio, Google Flow, and video inserted in Google Docs. Anything else drops into the side panel. <a href="#where">Support table</a></p>
         </article>
       </div>
     </div>
@@ -187,7 +301,7 @@
         <h2>Four surfaces, one panel.</h2>
         <p class="lede">Each of these is a place Google puts a watermark on something you made. Erasezo attaches to all of them from the same install.</p>
       </div>
-      <div class="tablewrap">
+      <div class="tablewrap reveal">
         <table>
           <caption>Support by surface. Video means MP4 export at 720p or 1080p.</caption>
           <thead>
@@ -199,6 +313,89 @@
             <tr><th scope="row">Google Flow</th><td><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td>A button on each generated tile</td></tr>
             <tr><th scope="row">Google Docs video</th><td><span class="no">—</span></td><td><span class="yes">Yes</span></td><td>Cleans on insert</td></tr>
             <tr><th scope="row">Anything else</th><td><span class="yes">Yes</span></td><td><span class="yes">Yes</span></td><td>Drop the file into the side panel</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- comparison ---------- -->
+  <section id="compare">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Comparison</p>
+        <h2>Erasezo vs other ways of removing the mark</h2>
+        <p class="lede">
+          How a browser-native inverse of the visible sparkle compares to sending
+          the file to a cloud remover or asking an inpainter to guess the pixels.
+        </p>
+      </div>
+      <div class="tablewrap compare-wrap reveal">
+        <table class="compare">
+          <caption>Category comparison. Partial means the job can be done, but not the same way Erasezo does it.</caption>
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col">Erasezo</th>
+              <th scope="col">Generic cloud removers</th>
+              <th scope="col">AI inpainting tools</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">
+                Removes the visible Gemini sparkle
+                <small>Calibrated inverse of the overlay, not a paint-over.</small>
+              </th>
+              <td><span class="yes">Yes</span></td>
+              <td><span class="partial">Partial</span></td>
+              <td><span class="partial">Partial</span></td>
+            </tr>
+            <tr>
+              <th scope="row">
+                Local processing
+                <small>Runs in your browser. No GPU queue on someone else's machine.</small>
+              </th>
+              <td><span class="yes">Yes</span></td>
+              <td><span class="no">No</span></td>
+              <td><span class="no">No</span></td>
+            </tr>
+            <tr>
+              <th scope="row">
+                File never uploaded
+                <small>erasezo.com sees sign-in and credit counts, not the pixels.</small>
+              </th>
+              <td><span class="yes">Yes</span></td>
+              <td><span class="no">No</span></td>
+              <td><span class="no">No</span></td>
+            </tr>
+            <tr>
+              <th scope="row">
+                Auto-clean on download
+                <small>Gemini and AI Studio. Flow uses an in-page button instead.</small>
+              </th>
+              <td><span class="yes">Yes</span></td>
+              <td><span class="no">No</span></td>
+              <td><span class="no">No</span></td>
+            </tr>
+            <tr>
+              <th scope="row">
+                Video at 720p and 1080p
+                <small>4K and upscaled 1080p Flow exports are not supported.</small>
+              </th>
+              <td><span class="yes">Yes</span></td>
+              <td><span class="partial">Partial</span></td>
+              <td><span class="partial">Partial</span></td>
+            </tr>
+            <tr>
+              <th scope="row">
+                Detector dials in the panel
+                <small>Mask size, gain, accept/trust thresholds, scan stride — the defaults it ships with.</small>
+              </th>
+              <td><span class="yes">Yes</span></td>
+              <td><span class="no">No</span></td>
+              <td><span class="no">No</span></td>
+            </tr>
           </tbody>
         </table>
       </div>
@@ -217,19 +414,19 @@
         </p>
       </div>
       <div class="grid g2">
-        <article class="card">
+        <article class="card reveal">
           <h3>Mask size</h3>
           <p>Grows the treated area when a stamp sits slightly outside where it was found. Left at 1.00× it treats exactly the detected region.</p>
         </article>
-        <article class="card">
+        <article class="card reveal">
           <h3>Gain when the stamp drifts</h3>
           <p>How hard to push when the mark is not where it usually sits. Lower it if a correction is leaving a soft patch behind.</p>
         </article>
-        <article class="card">
+        <article class="card reveal">
           <h3>Accept and trust thresholds</h3>
           <p>The match scores that decide whether a watermark is really there. Lower the accept threshold to catch fainter marks.</p>
         </article>
-        <article class="card">
+        <article class="card reveal">
           <h3>Scan stride</h3>
           <p>How finely to search when the stamp has moved. Smaller is more thorough and slower; 8 pixels is the balance it ships with.</p>
         </article>
@@ -240,15 +437,67 @@
   <!-- ---------- pricing ---------- -->
   <section id="pricing">
     <div class="wrap">
-      <div class="section-head">
+      <div class="section-head center">
         <p class="eyebrow">Pricing</p>
         <h2>Free every day. Pay only if you outgrow it.</h2>
-        <p class="lede">One credit is one cleaned file. Credits refresh daily — they don't expire and they don't roll over.</p>
+        <p class="lede">One credit is one cleaned file. Credits refresh daily — they don't expire and they don't roll over. An account is required so the 15 free credits have somewhere to live.</p>
       </div>
       <div class="plans" id="plans">
         <p class="plan-skel">Loading plans…</p>
       </div>
       <p class="foot-note" id="planNote"></p>
+    </div>
+  </section>
+
+  <!-- ---------- reviews ----------
+       There are no Erasezo Chrome Web Store reviews to show. Inventing
+       testimonials is forbidden. This section is the honest placeholder. -->
+  <section id="reviews">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Chrome Web Store</p>
+        <h2>Reviews when the Store listing is live.</h2>
+        <p class="lede">
+          Erasezo is not on the Chrome Web Store yet, so there are no listing
+          reviews to quote. We will not invent any.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------- ethics / scope ---------- -->
+  <section id="scope">
+    <div class="wrap">
+      <div class="section-head center">
+        <p class="eyebrow">Scope</p>
+        <h2>What Erasezo removes — and what it leaves alone</h2>
+        <p class="lede">
+          Erasezo takes off the visible mark that gets in the way of using media
+          you generated and own. It is not a way to hide that something was made
+          with AI, and it is not built to be.
+        </p>
+      </div>
+      <div class="grid g3">
+        <article class="card scope in reveal">
+          <p class="scope-kicker">Removed</p>
+          <h3>The visible watermark</h3>
+          <p>The sparkle Google composites into the corner of an image and every frame of a video. Erasezo inverts the blend on those pixels — no repainting, no halo, no guesswork.</p>
+        </article>
+        <article class="card scope stay reveal">
+          <p class="scope-kicker">Untouched</p>
+          <h3>SynthID provenance</h3>
+          <p>Google's invisible signal, spread across the whole pixel grid. Erasezo does not target it, weaken it, or attempt to. A file that identified as AI-generated still will.</p>
+        </article>
+        <article class="card scope out reveal">
+          <p class="scope-kicker">Out of scope</p>
+          <h3>Everyone else's watermarks</h3>
+          <p>The engine is calibrated to Google's sparkle. It will not strip attribution from stock imagery, photographers' work, or another creator's content.</p>
+        </article>
+      </div>
+      <p class="scope-links">
+        <a href="/privacy">Privacy policy</a>
+        — how files, accounts and cookies are handled.
+      </p>
     </div>
   </section>
 
@@ -262,11 +511,11 @@
       <div class="faq">
         <details>
           <summary>Do my images get uploaded anywhere?</summary>
-          <p>No. Decoding, detection and reconstruction all happen in your browser. The only things that travel to us are your sign-in and your credit balance.</p>
+          <p>No. Decoding, detection and reconstruction all happen in your browser. The only things that travel to us are your sign-in and your credit balance. The <a href="/privacy">privacy policy</a> spells that out.</p>
         </details>
         <details>
           <summary>What counts as a credit?</summary>
-          <p>One cleaned file. A free account gets 15 a day, refreshed at midnight UTC. Nothing is deducted when a file turns out to have no watermark on it.</p>
+          <p>One cleaned file. A free account gets 15 a day, refreshed at midnight UTC. Nothing is deducted when a file turns out to have no watermark on it. You need an account — there is no anonymous quota.</p>
         </details>
         <details>
           <summary>Which video resolutions work?</summary>
@@ -278,42 +527,96 @@
         </details>
         <details>
           <summary>Can I use it on files I didn't make in Google's tools?</summary>
-          <p>Yes. Drop any PNG, JPG, WebP or MP4 into the side panel. The detector is tuned for Google's sparkle, so results on other marks vary.</p>
+          <p>Yes. Drop any PNG, JPG, WebP or MP4 into the side panel. The detector is tuned for Google's sparkle, so results on other marks vary — and other people's watermarks are out of scope.</p>
         </details>
         <details>
           <summary>What happens to my credits if I cancel?</summary>
           <p>You return to the free tier and keep getting 15 a day. Nothing you have already cleaned is affected.</p>
         </details>
+        <details>
+          <summary>Is it on the Chrome Web Store?</summary>
+          <p>Not yet. <a href="#get-extension">Get the extension</a> explains how to create an account and load an unpacked build until the listing is live.</p>
+        </details>
       </div>
     </div>
   </section>
 
-  <!-- ---------- closing ---------- -->
-  <section>
+  <!-- ---------- get the extension ----------
+       There is no Erasezo Chrome Web Store listing yet. These CTAs used to
+       open Erasio's, which is a different product. This section is the honest
+       destination: create an account, or load unpacked if you have the source. -->
+  <section id="get-extension">
     <div class="wrap">
-      <div class="band">
-        <p class="eyebrow">Get started</p>
-        <h2>It takes about a minute.</h2>
-        <p class="lede">Install, sign in, and clean the next thing you generate.</p>
-        <div class="btn-row">
-          <a class="btn lg" id="installEnd" href="#">Add to Chrome — free</a>
-          <a class="btn ghost lg" href="/login">Sign in</a>
-        </div>
+      <div class="section-head">
+        <p class="eyebrow">Get the extension</p>
+        <h2>Not on the Chrome Web Store yet.</h2>
+        <p class="lede">
+          Create an account so the 15 free credits are waiting, or load the unpacked
+          build if you already have the source on this machine.
+        </p>
+      </div>
+      <div class="grid g2">
+        <article class="card">
+          <h3>Create an account</h3>
+          <p>
+            A free account is 15 credits a day. The listing is not published yet;
+            signing up here is how you get in line — there is no second form that
+            would go nowhere.
+          </p>
+          <a class="btn" href="/login">Sign in or create an account</a>
+        </article>
+        <article class="card">
+          <h3>Load unpacked</h3>
+          <p>If you have the Erasezo extension folder on this machine:</p>
+          <ol>
+            <li>Open chrome://extensions in Chrome</li>
+            <li>Turn on Developer mode</li>
+            <li>Load unpacked and choose that folder</li>
+            <li>Open the side panel and sign in</li>
+          </ol>
+        </article>
       </div>
     </div>
   </section>
 </main>
 
+<section class="close-band" aria-labelledby="closeTitle">
+  <div class="wrap">
+    <p class="eyebrow">Get started</p>
+    <h2 id="closeTitle">It takes about a minute.</h2>
+    <p class="lede">Create an account, load the extension, and clean the next thing you generate.</p>
+    <div class="btn-row">
+      <a class="btn lg on-accent" id="installEnd" href="#get-extension">Get the extension</a>
+      <a class="btn ghost lg on-accent" href="/login" id="signinEnd">Sign in</a>
+    </div>
+  </div>
+</section>
+
 <footer class="site-foot">
   <div class="wrap">
-    <div class="foot-in">
-      <a class="brand" href="/"><img src="/mark.png" alt="" width="30" height="30">Erasezo</a>
-      <nav class="foot-links" aria-label="Footer">
+    <div class="foot-grid">
+      <div class="foot-brand">
+        <a class="brand" href="/"><img src="/mark.png" alt="" width="30" height="30">Erasezo</a>
+        <p>Removes the visible Gemini sparkle from images and video you generated — on your machine.</p>
+      </div>
+      <nav aria-label="Product">
+        <h3>Product</h3>
+        <a href="#features">Features</a>
         <a href="#how">How it works</a>
+        <a href="#live-demo">Demo</a>
         <a href="#pricing">Pricing</a>
+        <a href="#get-extension">Get the extension</a>
+      </nav>
+      <nav aria-label="Resources">
+        <h3>Resources</h3>
         <a href="#faq">FAQ</a>
+        <a href="#scope">Scope</a>
         <a href="/login">Sign in</a>
         <a href="/dashboard">Dashboard</a>
+      </nav>
+      <nav aria-label="Legal">
+        <h3>Legal</h3>
+        <a href="/privacy">Privacy</a>
       </nav>
     </div>
     <p class="foot-note">
@@ -322,6 +625,11 @@
     </p>
   </div>
 </footer>
+
+<nav class="dock" id="dock" hidden aria-label="Get started">
+  <a class="btn sm" id="installDock" href="#get-extension">Get the extension</a>
+  <a class="btn ghost sm" id="dockSignin" href="/login">Sign in</a>
+</nav>
 
 <script src="/home.js"></script>
 </body>
