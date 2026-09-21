@@ -130,12 +130,12 @@
 
   /* ---- sticky header + floating dock ---- */
   var dock = document.getElementById("dock");
-  var foot = document.querySelector(".site-foot");
   var pastHero = false;
-  var footHit = false;
+  var blocked = {};
   function syncDock() {
     if (!dock) return;
-    var show = pastHero && !footHit;
+    var hide = Object.keys(blocked).some(function (k) { return blocked[k]; });
+    var show = pastHero && !hide;
     dock.hidden = !show;
     dock.classList.toggle("on", show);
     document.body.classList.toggle("dock-pad", show);
@@ -148,11 +148,19 @@
   }
   window.addEventListener("scroll", onScroll, { passive: true });
   onScroll();
-  if (dock && foot && "IntersectionObserver" in window) {
-    new IntersectionObserver(function (entries) {
-      footHit = !!(entries[0] && entries[0].isIntersecting);
+  // The dock repeats the same CTAs as the closing band. Hide it there (and
+  // over the footer) so it cannot sit on top of the buttons it duplicates.
+  if (dock && "IntersectionObserver" in window) {
+    var cover = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        blocked[en.target.id || en.target.className] = en.isIntersecting;
+      });
       syncDock();
-    }, { threshold: 0.08 }).observe(foot);
+    }, { threshold: 0.12 });
+    [".close-band", ".site-foot", "#get-extension"].forEach(function (sel) {
+      var n = document.querySelector(sel);
+      if (n) cover.observe(n);
+    });
   }
 
   /* ---- scroll reveal ---- */
