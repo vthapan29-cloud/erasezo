@@ -64,6 +64,7 @@ async function get(path, uid) {
   const status = (await (await get("/api/credits/status", a)).json()).data;
   assert.strictEqual(me.credits.dailyQuota, status.unlimited ? -1 : status.limit, "the dashboard's quota is the enforced one");
   assert.strictEqual(me.isAdmin, false, "a normal account is not flagged admin");
+  assert.strictEqual(me.hasPassword, true, "a password account tells the dashboard it has a password");
   assert.ok(!("password_hash" in me) && !("totp_secret" in me), "no secrets in the profile payload");
   console.log("ok - /api/me matches the enforced allowance and carries no secrets");
 

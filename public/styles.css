@@ -81,6 +81,7 @@ main{min-width:0;padding-bottom:64px}
 .btn-sm:hover{background:var(--hover)}
 .btn-sm.ghost{background:var(--surface-2);color:var(--ink);border:1px solid var(--border)}
 .btn-sm:disabled{opacity:.6;cursor:default}
+.btn-sm:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
 .hero .eyebrow{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:700}
 .big{font-size:2.4rem;font-weight:900;line-height:1.1;margin:6px 0 10px}
@@ -131,6 +132,10 @@ main{min-width:0;padding-bottom:64px}
 .identity .muted{display:block}
 .conn{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2)}
 .conn .muted{display:block;font-size:.8rem}
+.method-list{display:flex;flex-direction:column;gap:10px}
+.method-list .tag{margin-bottom:0}
+.method-list .muted{overflow-wrap:anywhere}
+.method-list + .hint{margin-top:12px}
 .msg.ok{display:block;background:rgba(31,157,107,.1);border:1px solid rgba(31,157,107,.4);color:var(--good)}
 
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:8}
