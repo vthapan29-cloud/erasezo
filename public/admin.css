@@ -111,6 +111,7 @@ input[type=range]{width:180px;accent-color:var(--accent)}
 .btn.danger{background:var(--crit);color:var(--crit-ink)}
 .btn.sm{padding:6px 11px;font-size:.8rem}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ref-why{white-space:pre-wrap;color:var(--ink-soft);font-size:.9rem;margin:8px 0}
 
 /* Dashboard bits */
 .tiles{display:grid;gap:12px;grid-template-columns:repeat(2,1fr)}

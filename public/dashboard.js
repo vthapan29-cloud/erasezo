@@ -542,20 +542,53 @@
     return i;
   }
 
-  /* ---- Referrals ---- */
+  /* ---- Referrals ----
+   * A code exists only after an application is approved. The empty state
+   * links to the application; it does not pretend the program is closed. */
+  var referralGen = 0;
   function renderReferral(host) {
-    var c = card(host, "Refer & earn", "Invite people to Erasezo and earn credits.");
-    if (me.referralCode) {
-      var link = location.origin + "/?ref=" + me.referralCode;
-      row(c, "Your link", link);
+    var c = card(host, "Refer & earn", "Invite people to Erasezo. A link is issued after your application is approved.");
+    var gen = ++referralGen;
+    var slot = el("div");
+    c.appendChild(slot);
+    slot.appendChild(el("p", "muted", "Loading…"));
+    api("/api/referral/me").then(function (d) {
+      if (gen !== referralGen) return;
+      slot.innerHTML = "";
+      paintReferral(slot, d);
+    }).catch(function () {
+      if (gen !== referralGen) return;
+      slot.innerHTML = "";
+      slot.appendChild(el("p", "muted", "Couldn't load your referral status."));
+      var a = el("a", "btn-sm", "Open the referral program");
+      a.href = "/referral";
+      var r = el("div", "row"); r.appendChild(a); slot.appendChild(r);
+    });
+  }
+  function paintReferral(slot, d) {
+    if (d && d.status === "approved" && d.referralCode) {
+      var link = location.origin + "/?ref=" + d.referralCode;
+      row(slot, "Your link", link);
+      row(slot, "Signups", d.signups);
+      row(slot, "Credits earned", d.creditsEarned);
       var r = el("div", "row");
       r.appendChild(btn("Copy link", "", function () {
         navigator.clipboard.writeText(link).then(function () { toast("Link copied"); }, function () { toast("Couldn't copy — select the link instead"); });
       }));
-      c.appendChild(r);
-    } else {
-      c.appendChild(el("p", "muted", "Referrals aren't open on your account yet. Once they are, your link and earned credits will appear here."));
+      slot.appendChild(r);
+      return;
     }
+    if (d && d.status === "pending") {
+      slot.appendChild(el("p", "muted", "Your application is in review. The link appears here once it's approved."));
+    } else if (d && d.status === "rejected") {
+      slot.appendChild(el("p", "muted", "This application wasn't approved. You can submit a new one."));
+      if (d.rejectReason) slot.appendChild(el("p", "note", d.rejectReason));
+    } else {
+      slot.appendChild(el("p", "muted", "You don't have a referral link yet. Apply, and a person reviews it. If it's approved, the link and the credits it earns show up here."));
+    }
+    var a = el("a", "btn-sm", d && d.status === "rejected" ? "Apply again" : "Apply for referral access");
+    a.href = "/referral";
+    var rowEl = el("div", "row"); rowEl.appendChild(a); slot.appendChild(rowEl);
   }
 
   /* ---- data ---- */

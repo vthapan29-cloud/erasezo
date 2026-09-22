@@ -127,6 +127,7 @@
     { id: "dashboard", title: "Dashboard", icon: "📊", custom: renderDashboard },
     { id: "users", title: "Users", icon: "👤", custom: renderUsers },
     { id: "plans", title: "Plans", icon: "💳", custom: renderPlans },
+    { id: "referrals", title: "Referrals", icon: "🎁", custom: renderReferrals },
     { id: "detection", title: "Detection", icon: "🎯",
       desc: "How the sparkle is located. Lower nccAccept catches fainter marks; the scan finds it when it drifts off the auto position.",
       groups: [{ title: "Image detection · erasioToolImageSettings", fields: [
@@ -202,6 +203,7 @@
     audit: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h4"/>',
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     plans: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
+    referrals: '<path d="M20 12v9H4v-9"/><rect x="2" y="7" width="20" height="5" rx="1"/><path d="M12 21V7"/><path d="M12 7 8.5 3.5a2.5 2.5 0 1 1 3.5 0"/><path d="M12 7l3.5-3.5a2.5 2.5 0 1 0-3.5 0"/>',
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
     detection: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
     removal: '<path d="m7 21-4.3-4.3a1.7 1.7 0 0 1 0-2.4l9.6-9.6a1.7 1.7 0 0 1 2.4 0l5 5a1.7 1.7 0 0 1 0 2.4L13 21"/><path d="M22 21H8"/><path d="m5 12 7 7"/>',
@@ -1256,15 +1258,97 @@
     store.set(o).then(function () { toast("Reset to defaults"); reload(); });
   }
 
+  /* ---- Referrals ----
+   * Applications to become a referrer. Approving mints a code; rejecting
+   * clears it. Both ask for confirmation because each one changes whether
+   * a link pays out. */
+  var refState = { status: "pending", loading: false, data: null, error: null };
+  function loadReferrals() {
+    refState.loading = true;
+    adminApi("/api/admin/referrals?status=" + encodeURIComponent(refState.status))
+      .then(function (d) { refState.data = d; refState.error = null; })
+      .catch(function (e) { refState.error = e.message; refState.data = null; })
+      .then(function () { refState.loading = false; if (active === "referrals") render(); });
+  }
+  function renderReferrals(tab, panel) {
+    var ph = el("div", "panel-head");
+    ph.appendChild(el("h2", null, "Referrals"));
+    ph.appendChild(el("p", null, "Applications to share Erasezo. A link is created only when you approve. Rejecting an approved partner removes the link; signups already counted stay counted. A rejected applicant can apply again."));
+    panel.appendChild(ph);
+
+    var filters = el("div", "row");
+    ["pending", "approved", "rejected"].forEach(function (s) {
+      filters.appendChild(btn(s.charAt(0).toUpperCase() + s.slice(1), refState.status === s ? "sm" : "ghost sm", function () {
+        refState.status = s; refState.data = null; loadReferrals();
+      }));
+    });
+    panel.appendChild(filters);
+
+    if (refState.loading && !refState.data) { renderSkeleton(panel); return; }
+    if (refState.error) {
+      var ec = el("div", "card pad");
+      ec.appendChild(el("div", "callout", "Couldn't load applications: " + refState.error));
+      panel.appendChild(ec);
+      return;
+    }
+    if (!refState.data) { loadReferrals(); renderSkeleton(panel); return; }
+
+    var list = refState.data.applications || [];
+    if (!list.length) {
+      var empty = el("div", "card pad");
+      empty.appendChild(el("p", null, "No " + refState.status + " applications."));
+      panel.appendChild(empty);
+      return;
+    }
+    list.forEach(function (a) {
+      var card = el("div", "card pad");
+      card.appendChild(el("h3", null, a.email));
+      card.appendChild(el("p", "sec-sub", (a.username || "—") + " · " + a.status + (a.audience ? " · " + a.audience : "")));
+      card.appendChild(el("p", null, "Where: " + a.channel));
+      card.appendChild(el("p", "ref-why", a.why));
+      if (a.rejectReason) card.appendChild(el("p", "sec-sub", "Reason: " + a.rejectReason));
+      if (a.referralCode) card.appendChild(el("p", "sec-sub", "Code: " + a.referralCode));
+      var actions = el("div", "row");
+      if (a.status !== "approved") {
+        actions.appendChild(btn("Approve", "sm", function () {
+          if (!confirm("Approve " + a.email + "? They will get a referral link.")) return;
+          adminApi("/api/admin/referrals/" + a.userId + "/approve", { method: "POST", body: {} })
+            .then(function () { toast("Approved"); refState.data = null; loadReferrals(); })
+            .catch(function (e) { toast(e.message || "Couldn't approve"); });
+        }));
+      }
+      if (a.status !== "rejected") {
+        var reason = el("input");
+        reason.type = "text";
+        reason.placeholder = "Optional reason";
+        reason.maxLength = 500;
+        reason.setAttribute("aria-label", "Rejection reason for " + a.email);
+        actions.appendChild(reason);
+        actions.appendChild(btn("Reject", "danger sm", function () {
+          if (!confirm("Reject " + a.email + "?")) return;
+          adminApi("/api/admin/referrals/" + a.userId + "/reject", { method: "POST", body: { reason: reason.value } })
+            .then(function () { toast("Rejected"); refState.data = null; loadReferrals(); })
+            .catch(function (e) { toast(e.message || "Couldn't reject"); });
+        }));
+      }
+      card.appendChild(actions);
+      panel.appendChild(card);
+    });
+  }
+
   /* ---- boot ---- */
   var active = "dashboard";
+  try {
+    var startHash = location.hash.replace("#", "");
+    if (SCHEMA.some(function (t) { return t.id === startHash; })) active = startHash;
+  } catch (e) {}
   /* Two kinds of setting live in this panel and conflating them is what made it
    * confusing: SERVICE settings are server-side and affect every customer,
    * EXTENSION settings are this browser's chrome.storage and affect the engine.
    * Grouping the nav makes the blast radius of a change obvious before it's
    * made. */
   var NAV_GROUPS = [
-    { label: "Service", ids: ["dashboard", "users", "plans"] },
+    { label: "Service", ids: ["dashboard", "users", "plans", "referrals"] },
     { label: "Engine", ids: ["detection", "removal", "masklocks", "video", "sites"] },
     { label: "System", ids: ["audit", "sync", "localization", "maintenance"] }
   ];
@@ -1291,7 +1375,7 @@
   function navBtn(tab) {
     var b = el("button"); if (tab.id === active) b.className = "on";
     b.appendChild(icon(tab.id, "nav-ic")); b.appendChild(document.createTextNode(tab.title));
-    b.addEventListener("click", function () { active = tab.id; render(); });
+    b.addEventListener("click", function () { active = tab.id; try { history.replaceState(null, "", "#" + tab.id); } catch (e) {} render(); });
     return b;
   }
   function render() {

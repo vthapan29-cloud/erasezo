@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Erasezo — Referral program</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Apply for an Erasezo referral link. Approved partners earn credits when someone new creates an account.">
+<link rel="icon" href="/favicon.png" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/tokens.css">
+<link rel="stylesheet" href="/home.css">
+<link rel="stylesheet" href="/referral.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="site-head">
+  <div class="wrap head-in">
+    <a class="brand" href="/"><img src="/mark.png" alt="" width="30" height="30">Erasezo</a>
+    <nav class="site-nav" aria-label="Main">
+      <a href="/#how">How it works</a>
+      <a href="/#pricing">Pricing</a>
+      <a href="/referral" aria-current="page">Referrals</a>
+    </nav>
+    <div class="head-cta">
+      <a class="btn ghost sm" href="/login?next=/referral" id="signinLink">Sign in</a>
+      <a class="btn sm" href="/dashboard" id="dashLink" hidden>Dashboard</a>
+    </div>
+  </div>
+</header>
+
+<main id="main" class="ref-main">
+  <div class="wrap ref-grid">
+    <div>
+      <p class="eyebrow">Referral program</p>
+      <h1>Earn credits with Erasezo</h1>
+      <p class="lede">Share Erasezo with people who would actually use it. When someone new creates an account from your link, you earn credits.</p>
+
+      <div class="card ref-reward">
+        <p class="ref-kicker">Signup reward</p>
+        <p class="ref-num" id="signupCredits">…</p>
+        <p>credits for each new account</p>
+      </div>
+
+      <p class="ref-later">A bonus when someone you refer starts a paid plan is not part of this program yet.</p>
+
+      <p class="ref-warn" id="rules">This credit can be reversed if the signup is not a genuine new account. Credits you get from the daily allowance are separate and are not taken back for that reason.</p>
+
+      <ol class="ref-steps">
+        <li><span>1</span><b>Share</b><p>Send your link after your application is approved.</p></li>
+        <li><span>2</span><b>Sign up</b><p>They create their own Erasezo account.</p></li>
+        <li><span>3</span><b>Verify</b><p>Google checks a Google account. A password account counts when it is created.</p></li>
+        <li><span>4</span><b>Earn</b><p>The signup reward is added to your balance once.</p></li>
+      </ol>
+    </div>
+
+    <div class="card ref-apply" id="applyCard">
+      <h2>Apply for referral access</h2>
+      <div id="applyBody">
+        <p>Every application is read by a person. Sign in to apply.</p>
+        <a class="btn" href="/login?next=/referral">Sign in to apply</a>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-in">
+      <a class="brand" href="/"><img src="/mark.png" alt="" width="30" height="30">Erasezo</a>
+      <nav class="foot-links" aria-label="Footer">
+        <a href="/#how">How it works</a>
+        <a href="/#pricing">Pricing</a>
+        <a href="/dashboard">Dashboard</a>
+        <a href="/login">Sign in</a>
+      </nav>
+    </div>
+    <p class="foot-note">Erasezo is an independent tool and is not affiliated with Google.</p>
+  </div>
+</footer>
+
+<script src="/referral.js"></script>
+</body>
+</html>
