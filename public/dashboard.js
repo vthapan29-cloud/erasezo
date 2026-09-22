@@ -391,42 +391,155 @@
     }
   }
 
-  /* ---- Security ---- */
+  /* ---- Security ----
+   * Two real credentials, read from the account rather than assumed:
+   *   googleId     — Google sign-in is linked
+   *   hasPassword  — email + password sign-in works (/api/auth/login checks the hash)
+   * A Google account with no hash can add a password. An account that already
+   * has one must change it by proving the current password. There is no session
+   * list and no second factor on this page. */
   function renderSecurity(host) {
-    var c = card(host, "Password", "Choose a strong password to keep your account secure.");
-    if (me.authProvider === "google" && !me.email) { c.appendChild(el("p", "muted", "This account uses Google sign-in.")); return; }
-    if (me.authProvider === "google") {
-      c.appendChild(el("p", "muted", "This account signs in with Google, so there's no password to change here."));
-      return;
-    }
-    var cur = passField(c, "Current password");
-    var n1 = passField(c, "New password");
-    var n2 = passField(c, "Confirm new password");
-    c.appendChild(el("p", "hint", "At least 8 characters."));
-    var msg = el("div", "msg"); c.appendChild(msg);
-    var save = btn("Update password", "", function () {
-      if (n1.value.length < 8) { msg.textContent = "New password must be at least 8 characters."; msg.className = "msg err"; return; }
-      if (n1.value !== n2.value) { msg.textContent = "The two new passwords don't match."; msg.className = "msg err"; return; }
-      save.disabled = true;
-      api("/api/user/password", { method: "PATCH", body: { currentPassword: cur.value, newPassword: n1.value } })
-        .then(function () {
-          msg.textContent = "Password updated."; msg.className = "msg ok";
-          cur.value = n1.value = n2.value = ""; save.disabled = false;
-        })
-        .catch(function (e) { msg.textContent = e.message || "Couldn't update."; msg.className = "msg err"; save.disabled = false; });
-    });
-    var r = el("div", "row"); r.appendChild(save); c.appendChild(r);
+    var state = securityState(me);
 
-    var s = card(host, "Sessions");
-    s.appendChild(el("p", "muted", "Signing out ends this browser's session. The Erasezo extension signs out with it."));
+    var methods = card(host, "Sign-in methods", "Ways this account can sign in.");
+    var list = el("div", "method-list");
+    list.appendChild(methodRow(
+      "Google",
+      state.googleConnected ? "Linked to this account." : "Not linked.",
+      state.googleConnected ? "Connected" : "Not connected",
+      state.googleConnected
+    ));
+    list.appendChild(methodRow(
+      "Email and password",
+      state.hasPassword ? ("Sign in with " + (me.email || "your email") + ".") : "No password on this account.",
+      state.hasPassword ? "On" : "Not set",
+      state.hasPassword
+    ));
+    methods.appendChild(list);
+    if (!state.googleConnected) {
+      methods.appendChild(el("p", "hint", "To link Google, sign out and use “Continue with Google”. Accounts sharing an email are merged automatically."));
+    }
+
+    if (state.hasPassword) renderChangePassword(host, state);
+    else renderSetPassword(host, state);
+
+    var s = card(host, "This browser", "Signing out ends the session in this browser.");
     var sr = el("div", "row");
     sr.appendChild(btn("Sign out", "ghost", signOut));
     s.appendChild(sr);
   }
-  function passField(c, label) {
-    c.appendChild(el("label", null, label));
-    var i = el("input"); i.type = "password"; i.autocomplete = "new-password";
-    c.appendChild(i); return i;
+
+  function renderChangePassword(host, state) {
+    var sub = state.googleConnected
+      ? "Email sign-in uses this password. Google sign-in stays linked."
+      : "Enter your current password, then choose a new one.";
+    var c = card(host, "Change password", sub);
+    var cur, n1, n2, msg, save;
+    var form = el("form");
+    cur = passField(form, "Current password", "sec-current", "current-password");
+    n1 = passField(form, "New password", "sec-new", "new-password");
+    n2 = passField(form, "Confirm new password", "sec-confirm", "new-password");
+    form.appendChild(el("p", "hint", "At least 8 characters."));
+    msg = el("div", "msg"); msg.setAttribute("role", "status"); form.appendChild(msg);
+    save = el("button", "btn-sm", "Update password"); save.type = "submit";
+    var rowEl = el("div", "row"); rowEl.appendChild(save); form.appendChild(rowEl);
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (save.disabled) return;
+      var err = passwordFormError("change", cur.value, n1.value, n2.value);
+      if (err) { msg.textContent = err; msg.className = "msg err"; return; }
+      save.disabled = true;
+      api("/api/user/password", { method: "PATCH", body: { currentPassword: cur.value, newPassword: n1.value } })
+        .then(function () {
+          msg.textContent = "Password updated."; msg.className = "msg ok";
+          cur.value = n1.value = n2.value = "";
+          save.disabled = false;
+        })
+        .catch(function (err2) {
+          msg.textContent = passwordErrorText(err2); msg.className = "msg err"; save.disabled = false;
+        });
+    });
+    c.appendChild(form);
+  }
+
+  function renderSetPassword(host, state) {
+    var sub = state.googleConnected
+      ? "Google sign-in stays as it is. A password also lets you sign in with your email."
+      : "This account has no password yet. Set one to sign in with your email.";
+    var c = card(host, "Add a password", sub);
+    var n1, n2, msg, save;
+    var form = el("form");
+    n1 = passField(form, "New password", "sec-new", "new-password");
+    n2 = passField(form, "Confirm new password", "sec-confirm", "new-password");
+    form.appendChild(el("p", "hint", "At least 8 characters."));
+    msg = el("div", "msg"); msg.setAttribute("role", "status"); form.appendChild(msg);
+    save = el("button", "btn-sm", "Add password"); save.type = "submit";
+    var rowEl = el("div", "row"); rowEl.appendChild(save); form.appendChild(rowEl);
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (save.disabled) return;
+      var err = passwordFormError("set", "", n1.value, n2.value);
+      if (err) { msg.textContent = err; msg.className = "msg err"; return; }
+      save.disabled = true;
+      api("/api/user/password", { method: "POST", body: { newPassword: n1.value } })
+        .then(function () {
+          me.hasPassword = true;
+          toast("Password added. You can sign in with your email as well.");
+          render();
+        })
+        .catch(function (err2) {
+          msg.textContent = passwordErrorText(err2); msg.className = "msg err"; save.disabled = false;
+        });
+    });
+    c.appendChild(form);
+  }
+
+  function methodRow(title, detail, tagText, on) {
+    var g = el("div", "conn");
+    var gl = el("div");
+    gl.appendChild(el("b", null, title));
+    gl.appendChild(el("span", "muted", detail));
+    g.appendChild(gl);
+    g.appendChild(el("span", "tag" + (on ? " on" : ""), tagText));
+    return g;
+  }
+
+  function securityState(user) {
+    return {
+      googleConnected: !!(user && user.googleId),
+      hasPassword: !!(user && user.hasPassword),
+    };
+  }
+
+  function passwordFormError(mode, current, next, confirmNext) {
+    if (mode === "change" && !String(current || "")) return "Enter your current password.";
+    if (String(next || "").length < 8) return "New password must be at least 8 characters.";
+    if (next !== confirmNext) return "The two new passwords don't match.";
+    return "";
+  }
+
+  function passwordErrorText(e) {
+    var known = {
+      wrong_current_password: "Current password is incorrect.",
+      weak_password: "Password must be at least 8 characters.",
+      oauth_only: "This account has no password to change.",
+      password_exists: "This account already has a password.",
+      rate_limited: "Too many attempts — try again shortly."
+    };
+    if (e && known[e.code]) return known[e.code];
+    return (e && e.message) || "Couldn't update the password.";
+  }
+
+  function passField(parent, label, id, autocomplete) {
+    var lab = el("label", null, label);
+    lab.htmlFor = id;
+    parent.appendChild(lab);
+    var i = el("input");
+    i.type = "password";
+    i.id = id;
+    i.autocomplete = autocomplete;
+    parent.appendChild(i);
+    return i;
   }
 
   /* ---- Referrals ---- */

@@ -30,6 +30,8 @@ async function req(path, opts) {
   assert.strictEqual(r.status, 200, "register 200");
   let me = await (await req("/api/me")).json();
   assert.strictEqual(me.email, "a@x.com", "me email");
+  assert.strictEqual(me.hasPassword, true, "a password account reports that email sign-in is available");
+  assert.ok(!("password_hash" in me), "the password hash is not part of the profile");
   assert.strictEqual(me.credits.today, 15, "daily free quota granted on register");
   assert.strictEqual(me.plan, "free", "default plan free");
   console.log("ok - register + session + daily free credits");
@@ -59,7 +61,98 @@ async function req(path, opts) {
   const gcookie = "erasezo_token=" + jwt.sign({ uid: gid }, "test-secret");
   r = await fetch(base + "/api/user/password", { method: "PATCH", headers: { "Content-Type": "application/json", Cookie: gcookie }, body: JSON.stringify({ currentPassword: "x", newPassword: "newpassword123" }) });
   assert.strictEqual(r.status, 403, "google-only password change 403");
+  const blocked = await r.json();
+  assert.strictEqual(blocked.error, "oauth_only", "missing password is refused as oauth_only");
   console.log("ok - password change 403 (server-side) for Google-only account");
+
+  // 5b) A Google account can add a password once. Email login already accepts
+  //     any row with a hash, and Google sign-in keeps using google_id.
+  const gMeBefore = await (await fetch(base + "/api/me", { headers: { Cookie: gcookie } })).json();
+  assert.strictEqual(gMeBefore.hasPassword, false, "google-only account has no password yet");
+  assert.strictEqual(gMeBefore.authProvider, "google");
+  assert.ok(!("password_hash" in gMeBefore), "hash stays off the profile for a google account too");
+
+  const weak = await fetch(base + "/api/user/password", {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: gcookie },
+    body: JSON.stringify({ newPassword: "short" }),
+  });
+  assert.strictEqual(weak.status, 400, "a short password is refused");
+  assert.strictEqual((await weak.json()).error, "weak_password");
+
+  const anon = await fetch(base + "/api/user/password", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ newPassword: "brand-new-password" }),
+  });
+  assert.strictEqual(anon.status, 401, "setting a password requires a session");
+
+  const added = await fetch(base + "/api/user/password", {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: gcookie },
+    body: JSON.stringify({ newPassword: "google-pass-123" }),
+  });
+  assert.strictEqual(added.status, 200, "google account can set a password once");
+  const gRow = (await db.query("select auth_provider, google_id, password_hash from users where email=$1", ["g@x.com"])).rows[0];
+  assert.strictEqual(gRow.auth_provider, "google", "adding a password does not relabel the account");
+  assert.strictEqual(gRow.google_id, "gid-1", "google link is untouched");
+  assert.ok(gRow.password_hash && gRow.password_hash !== "google-pass-123", "the new password is stored hashed");
+
+  const gMeAfter = await (await fetch(base + "/api/me", { headers: { Cookie: gcookie } })).json();
+  assert.strictEqual(gMeAfter.hasPassword, true, "profile now reports a password");
+
+  const gLogin = await fetch(base + "/api/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "g@x.com", password: "google-pass-123" }),
+  });
+  assert.strictEqual(gLogin.status, 200, "email login accepts the password added to a google account");
+  const gExt = await fetch(base + "/api/ext/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "g@x.com", password: "google-pass-123" }),
+  });
+  assert.strictEqual(gExt.status, 200, "the extension login accepts it too");
+
+  const again = await fetch(base + "/api/user/password", {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: gcookie },
+    body: JSON.stringify({ newPassword: "another-password" }),
+  });
+  assert.strictEqual(again.status, 409, "a second set does not overwrite the password");
+  assert.strictEqual((await again.json()).error, "password_exists");
+
+  const wrongCur = await fetch(base + "/api/user/password", {
+    method: "PATCH", headers: { "Content-Type": "application/json", Cookie: gcookie },
+    body: JSON.stringify({ currentPassword: "nope", newPassword: "changed-pass-123" }),
+  });
+  assert.strictEqual(wrongCur.status, 400, "changing still requires the current password");
+  assert.strictEqual((await wrongCur.json()).error, "wrong_current_password");
+
+  const changed = await fetch(base + "/api/user/password", {
+    method: "PATCH", headers: { "Content-Type": "application/json", Cookie: gcookie },
+    body: JSON.stringify({ currentPassword: "google-pass-123", newPassword: "changed-pass-123" }),
+  });
+  assert.strictEqual(changed.status, 200, "once a password exists, a google account can change it");
+  assert.strictEqual((await fetch(base + "/api/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "g@x.com", password: "google-pass-123" }),
+  })).status, 401, "the previous password no longer signs in");
+  assert.strictEqual((await fetch(base + "/api/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "g@x.com", password: "changed-pass-123" }),
+  })).status, 200, "the replacement password signs in");
+
+  const pwSet = await req("/api/user/password", {
+    method: "POST", body: JSON.stringify({ newPassword: "should-not-apply" }),
+  });
+  assert.strictEqual(pwSet.status, 409, "a password account cannot set over an existing password");
+
+  // Two sets at once: the UPDATE ... WHERE password_hash IS NULL lets one win.
+  await db.query("insert into users(email, auth_provider, google_id) values ($1,'google',$2)", ["g2@x.com", "gid-2"]);
+  const g2 = (await db.query("select id from users where email=$1", ["g2@x.com"])).rows[0].id;
+  const g2cookie = "erasezo_token=" + jwt.sign({ uid: g2 }, "test-secret");
+  const raced = await Promise.all([0, 1].map(() => fetch(base + "/api/user/password", {
+    method: "POST", headers: { "Content-Type": "application/json", Cookie: g2cookie },
+    body: JSON.stringify({ newPassword: "race-password-1" }),
+  })));
+  const raceStatuses = raced.map((x) => x.status).sort();
+  assert.deepStrictEqual(raceStatuses, [200, 409], "only one of two simultaneous sets stores a password");
+  console.log("ok - google account can add a password, then change it; a missing password cannot be changed");
 
   // 6) MERGE: google login for an email that already has a password account →
   //    links googleId to the SAME row, no duplicate user

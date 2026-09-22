@@ -148,7 +148,7 @@ const utcMidnight = () => { const d = new Date(); d.setUTCHours(0, 0, 0, 0); ret
 
 async function userPublic(id) {
   const u = (await db.query(
-    "select id, email, username, avatar_url, auth_provider, google_id, referral_code, daily_quota, disabled, credit_balance, is_admin from users where id=$1", [id]
+    "select id, email, username, avatar_url, auth_provider, google_id, referral_code, daily_quota, disabled, credit_balance, is_admin, (password_hash is not null) as has_password from users where id=$1", [id]
   )).rows[0];
   if (!u) return null;
   const total = Number((await db.query("select coalesce(sum(delta),0) s from credit_ledger where user_id=$1", [id])).rows[0].s);
@@ -162,6 +162,8 @@ async function userPublic(id) {
   return {
     userId: u.id, email: u.email, username: u.username || u.email.split("@")[0],
     avatarUrl: u.avatar_url, authProvider: u.auth_provider, googleId: u.google_id,
+    // Whether email sign-in can succeed. The hash itself never leaves the server.
+    hasPassword: !!u.has_password,
     referralCode: u.referral_code,
     plan: ent.planId, planName: ent.planName,
     subscriptionStatus: (sub && sub.status) || "none",
@@ -419,23 +421,58 @@ app.patch("/api/user/profile", auth, async (req, res) => {
   res.json(await userPublic(req.userId));
 });
 
-/* ---------- security: change password ---------- */
+/* ---------- security: password ----------
+ * A password is a credential on the user row, separate from how the row was
+ * created. Google sign-in stores google_id and leaves password_hash null.
+ * Email sign-in (the site and the extension) accepts any account that has a
+ * hash, so a Google account can add a password later and still sign in with
+ * Google — no second user, and auth_provider stays "google".
+ *
+ * Setting is allowed only while the hash is null. The guard is in the UPDATE,
+ * so two requests cannot both succeed. Changing requires the current password.
+ * An account with no hash cannot "change" one. */
+app.post("/api/user/password", auth, authLimiter, async (req, res) => {
+  try {
+    const next = String((req.body && req.body.newPassword) || "");
+    if (next.length < 8) return res.status(400).json({ error: "weak_password", message: "Password must be at least 8 characters." });
+    const hash = await bcrypt.hash(next, 12);
+    const row = (await db.query(
+      "update users set password_hash=$1 where id=$2 and password_hash is null returning id",
+      [hash, req.userId]
+    )).rows[0];
+    if (!row) {
+      return res.status(409).json({
+        error: "password_exists",
+        message: "This account already has a password. Change it with your current password.",
+      });
+    }
+    setAuthCookie(res, req.userId);
+    res.json({ ok: true });
+  } catch (e) { console.error("[password]", e && e.message); res.status(500).json({ error: "server_error" }); }
+});
+
 app.patch("/api/user/password", auth, authLimiter, async (req, res) => {
-  const u = (await db.query("select auth_provider, password_hash from users where id=$1", [req.userId])).rows[0];
-  if (!u) return res.status(401).json({ error: "not_authenticated" });
-  // Server-side block for OAuth-only accounts — not just a hidden UI.
-  if (u.auth_provider === "google" || !u.password_hash) {
-    return res.status(403).json({ error: "oauth_only", message: "Your account uses Google sign-in. Password management is not available for OAuth-only accounts." });
-  }
-  const cur = String(req.body.currentPassword || "");
-  const next = String(req.body.newPassword || "");
-  if (next.length < 8) return res.status(400).json({ error: "weak_password" });
-  if (!(await bcrypt.compare(cur, u.password_hash))) return res.status(400).json({ error: "wrong_current_password" });
-  await db.query("update users set password_hash=$1 where id=$2", [await bcrypt.hash(next, 12), req.userId]);
-  // Invalidate other sessions: rotate this one (a real impl would track a token
-  // version; here we simply re-issue the current session's cookie).
-  setAuthCookie(res, req.userId);
-  res.json({ ok: true });
+  try {
+    const u = (await db.query("select password_hash from users where id=$1", [req.userId])).rows[0];
+    if (!u) return res.status(401).json({ error: "not_authenticated" });
+    // No hash means there is nothing to change — a Google-only account, or any
+    // account that has not added a password yet. The block is the missing
+    // credential, not the provider name.
+    if (!u.password_hash) {
+      return res.status(403).json({ error: "oauth_only", message: "This account has no password to change." });
+    }
+    const cur = String((req.body && req.body.currentPassword) || "");
+    const next = String((req.body && req.body.newPassword) || "");
+    if (next.length < 8) return res.status(400).json({ error: "weak_password", message: "Password must be at least 8 characters." });
+    if (!(await bcrypt.compare(cur, u.password_hash))) {
+      return res.status(400).json({ error: "wrong_current_password", message: "Current password is incorrect." });
+    }
+    await db.query("update users set password_hash=$1 where id=$2", [await bcrypt.hash(next, 12), req.userId]);
+    // Re-issue this browser's cookie. Other sessions are not tracked, so this
+    // does not sign them out.
+    setAuthCookie(res, req.userId);
+    res.json({ ok: true });
+  } catch (e) { console.error("[password]", e && e.message); res.status(500).json({ error: "server_error" }); }
 });
 
 /* ---------- extension bridge: mint a bearer session for the logged-in cookie user ----------
