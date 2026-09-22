@@ -41,6 +41,16 @@ async function get(path, uid) {
   const plans = await (await get("/api/plans")).json();
   assert.ok(plans.plans.length >= 3, "plans are listed publicly");
   assert.ok(plans.plans.every((p) => !("razorpayPlanId" in p)), "no Razorpay ids in the public list");
+  assert.strictEqual(plans.paymentsConfigured, false, "no keys in test → paymentsConfigured is false");
+  process.env.RAZORPAY_KEY_ID = "rzp_test";
+  assert.strictEqual((await (await get("/api/plans")).json()).paymentsConfigured, false,
+    "one key is not enough");
+  process.env.RAZORPAY_KEY_SECRET = "rzp_test_secret";
+  assert.strictEqual((await (await get("/api/plans")).json()).paymentsConfigured, true,
+    "both keys → the same gate checkout uses");
+  delete process.env.RAZORPAY_KEY_ID;
+  delete process.env.RAZORPAY_KEY_SECRET;
+  assert.strictEqual((await (await get("/api/plans")).json()).paymentsConfigured, false);
   await db.query("insert into plans (id,name,daily_quota,price_inr,active) values ('hidden','Hidden',5,0,false)");
   const after = await (await get("/api/plans")).json();
   assert.ok(!after.plans.some((p) => p.id === "hidden"), "a deactivated plan is not offered");
