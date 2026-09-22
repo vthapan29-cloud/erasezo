@@ -50,6 +50,9 @@ a { color: var(--ez-accent-text); }
 
 /* ---------- section furniture ---------- */
 section { padding: clamp(64px, 9vw, 120px) 0; }
+/* Sticky header is 66px; in-page targets (especially #get-extension) must
+   not hide their heading underneath it. */
+section[id] { scroll-margin-top: 80px; }
 .eyebrow {
   font-family: var(--ez-mono);
   font-size: 11px; letter-spacing: .16em; text-transform: uppercase;
@@ -304,6 +307,11 @@ h3 { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
   border-radius: var(--ez-r); padding: 22px;
 }
 .card p { margin: 8px 0 0; color: var(--ez-ink-soft); font-size: .92rem; }
+.card ol {
+  margin: 10px 0 0; padding-left: 1.2em; color: var(--ez-ink-soft); font-size: .92rem;
+}
+.card li { margin: 6px 0; }
+.card > .btn { margin-top: 16px; }
 .card .ic-tile {
   width: 36px; height: 36px; border-radius: var(--ez-r-sm); display: grid; place-items: center;
   background: var(--ez-accent-wash); color: var(--ez-accent-text); margin-bottom: 14px;
@@ -361,16 +369,6 @@ details summary::after {
 details[open] summary::after { content: "\2212"; }
 details p { margin: 0 0 18px; color: var(--ez-ink-soft); font-size: .94rem; max-width: 68ch; }
 
-/* ---------- closing band ---------- */
-.band {
-  background: var(--ez-surface); border: 1px solid var(--ez-border);
-  border-radius: var(--ez-r-lg); padding: clamp(32px, 5vw, 56px); text-align: center;
-  position: relative; overflow: hidden;
-}
-.band .eyebrow { justify-content: center; }
-.band .lede { margin-inline: auto; }
-.band .btn-row { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 26px; }
-
 /* ---------- footer ---------- */
 .site-foot { border-top: 1px solid var(--ez-border); padding: 44px 0 56px; margin-top: clamp(48px, 7vw, 96px); }
 .foot-in { display: flex; flex-wrap: wrap; gap: 28px; justify-content: space-between; align-items: flex-start; }
@@ -378,3 +376,22 @@ details p { margin: 0 0 18px; color: var(--ez-ink-soft); font-size: .94rem; max-
 .foot-links a { color: var(--ez-ink-soft); text-decoration: none; font-size: .9rem; }
 .foot-links a:hover { color: var(--ez-ink); text-decoration: underline; }
 .foot-note { color: var(--ez-ink-faint); font-size: .82rem; margin: 24px 0 0; }
+
+/* ---------- legal / privacy ---------- */
+.doc { max-width: 68ch; }
+.doc .lede { margin-top: 12px; }
+.doc .updated {
+  margin: 10px 0 0; color: var(--ez-ink-faint);
+  font-family: var(--ez-mono); font-size: .78rem;
+}
+.doc h2 { margin: 36px 0 12px; font-size: 1.25rem; }
+.doc p, .doc li { color: var(--ez-ink-soft); }
+.doc p { margin: 0 0 12px; }
+.doc ul { margin: 0 0 16px; padding-left: 1.2em; }
+.doc li { margin: 6px 0; }
+.doc a { color: var(--ez-accent-text); }
+.doc code {
+  font-family: var(--ez-mono); font-size: .86em;
+  background: var(--ez-surface-2); border: 1px solid var(--ez-border);
+  border-radius: var(--ez-r-sm); padding: 1px 6px;
+}
