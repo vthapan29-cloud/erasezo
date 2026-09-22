@@ -1,0 +1,127 @@
+/* Referral program page. Colours come from tokens.css. Layout only lives here. */
+
+.ref-main { padding: clamp(28px, 5vw, 64px) 0 0; }
+.ref-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: clamp(22px, 4vw, 48px);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .ref-grid { grid-template-columns: 1fr; }
+  /* home.css hides the ghost header button below 900px because the home page
+     has a menu. This page has no menu, so Sign in has to stay. */
+  .head-cta .btn.ghost { display: inline-flex; }
+}
+
+.ref-reward { margin-top: 28px; }
+.ref-kicker {
+  margin: 0;
+  font-family: var(--ez-mono);
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ez-accent-text);
+  font-weight: 600;
+}
+.ref-num {
+  margin: 8px 0 0;
+  font-family: var(--ez-mono);
+  font-size: 2.6rem;
+  font-weight: 600;
+  letter-spacing: -.04em;
+  line-height: 1;
+  color: var(--ez-ink);
+}
+.ref-reward p:last-child { margin: 8px 0 0; color: var(--ez-ink-soft); }
+
+.ref-later { margin: 16px 0 0; color: var(--ez-ink-soft); font-size: .92rem; max-width: 58ch; }
+.ref-warn {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-radius: var(--ez-r);
+  background: var(--ez-warn-wash);
+  color: var(--ez-ink);
+  font-size: .92rem;
+  max-width: 62ch;
+}
+
+.ref-steps {
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.ref-steps li {
+  margin: 0;
+  padding: 0;
+}
+.ref-steps span {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--ez-r-sm);
+  border: 1px solid var(--ez-border-strong);
+  font-family: var(--ez-mono);
+  font-size: .8rem;
+  color: var(--ez-accent-text);
+  margin-bottom: 8px;
+}
+.ref-steps b { display: block; font-size: .92rem; }
+.ref-steps p { margin: 4px 0 0; color: var(--ez-ink-soft); font-size: .82rem; }
+@media (max-width: 720px) { .ref-steps { grid-template-columns: 1fr 1fr; } }
+
+.ref-apply h2 { font-size: 1.35rem; }
+.ref-apply > p, .ref-apply p.lead { color: var(--ez-ink-soft); margin: 8px 0 0; }
+.ref-apply label.fld { display: block; font-weight: 600; font-size: .9rem; margin: 16px 0 6px; }
+.ref-apply .opt { color: var(--ez-ink-faint); font-weight: 500; }
+.ref-apply input[type="text"],
+.ref-apply textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--ez-r);
+  border: 1px solid var(--ez-border-strong);
+  background: var(--ez-surface-2);
+  color: var(--ez-ink);
+  font: 400 .95rem var(--ez-font);
+}
+.ref-apply textarea { min-height: 140px; resize: vertical; }
+.ref-count { margin: 6px 0 0; color: var(--ez-ink-faint); font-size: .8rem; font-family: var(--ez-mono); }
+.ref-check {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-top: 16px;
+  font-size: .9rem;
+  color: var(--ez-ink-soft);
+}
+.ref-check input { margin-top: 4px; flex: none; }
+.ref-apply .btn { width: 100%; margin-top: 16px; }
+.ref-msg { margin: 12px 0 0; font-size: .88rem; }
+.ref-msg.err { color: var(--ez-crit); }
+.ref-status {
+  display: inline-block;
+  margin: 0 0 10px;
+  font-family: var(--ez-mono);
+  font-size: 11px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--ez-r-pill);
+  background: var(--ez-surface-2);
+  color: var(--ez-ink-soft);
+}
+.ref-status.pending { background: var(--ez-warn-wash); color: var(--ez-ink); }
+.ref-status.approved { background: var(--ez-good-wash); color: var(--ez-ink); }
+.ref-status.rejected { background: var(--ez-crit-wash); color: var(--ez-ink); }
+.ref-link {
+  width: 100%;
+  margin-top: 8px;
+  font-family: var(--ez-mono);
+  font-size: .82rem;
+}
+.ref-help { margin: 10px 0 0; color: var(--ez-ink-faint); font-size: .82rem; }

@@ -85,6 +85,11 @@ alter table users add column if not exists credit_balance integer not null defau
 -- Per-user override of the global DAILY_FREE allowance. NULL = use the default,
 -- so raising the default still lifts everyone who was never given an override.
 alter table users add column if not exists daily_quota  integer;
+-- Unspent referral credits. The daily cap would otherwise delete a bonus the
+-- moment it pushed the balance over the quota. Spending lowers this number;
+-- a quota sync does not, so a plan change cannot quietly take the bonus back
+-- or, worse, give it back after it was already spent.
+alter table users add column if not exists referral_credits integer not null default 0;
 -- Suspension is deliberately NOT the same thing as disabling, or there would be
 -- no reason for two controls: a disabled account cannot sign in at all, while a
 -- suspended one can still sign in, see why, and manage its billing — it just
@@ -107,6 +112,25 @@ create table if not exists webhook_events (
   received_at  timestamptz not null default now()
 );
 create index if not exists credit_ledger_user_created on credit_ledger (user_id, created_at);
+-- One referred account, one attribution. NULL stays repeatable so an old
+-- row that never named a person does not collide with another.
+create unique index if not exists referrals_one_referred on referrals (referred_user_id);
+-- Someone asking to become a referrer. Separate from the referrals table, which
+-- records a person who actually signed up through a link.
+-- Re-apply: a rejected row is updated back to pending. Pending and approved
+-- rows are not replaced.
+create table if not exists referral_applications (
+  user_id       integer primary key,
+  channel       text not null,
+  audience      text,
+  why           text not null,
+  status        text not null default 'pending',
+  reject_reason text,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  reviewed_at   timestamptz,
+  reviewed_by   integer
+);
 -- What each plan actually grants. Previously "pro" was just a string on the
 -- subscription with nothing behind it, so no plan changed what a user could do.
 -- daily_quota of -1 means unlimited.

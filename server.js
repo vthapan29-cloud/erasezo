@@ -36,6 +36,27 @@ app.set("trust proxy", 1);
 app.use(express.json({ limit: "64kb", verify: (req, res, buf) => { req.rawBody = buf; } }));
 app.use(cookieParser());
 
+const REF_COOKIE = "erasezo_ref";
+const NEXT_COOKIE = "erasezo_next";
+// A referral code is short and unambiguous. Anything else in ?ref= is ignored
+// rather than stored, so a long or punctuated value never becomes a cookie.
+function normalizeRef(raw) {
+  const s = String(raw || "").trim().toUpperCase();
+  return /^[A-Z0-9]{6,16}$/.test(s) ? s : "";
+}
+function safeNextPath(raw) {
+  const s = String(raw || "");
+  if (!s.startsWith("/") || s.startsWith("//") || s.includes("\\") || s.includes("://") || s.length > 200) return "";
+  return s;
+}
+app.use((req, res, next) => {
+  const code = normalizeRef(req.query && req.query.ref);
+  if (code) {
+    res.cookie(REF_COOKIE, code, { httpOnly: true, sameSite: "lax", secure: PROD, maxAge: 30 * 864e5, path: "/" });
+  }
+  next();
+});
+
 /* ---------- security headers ---------- */
 // Hand-rolled instead of the `helmet` package — a handful of headers, easy to
 // audit inline, no extra dependency for a small app.
@@ -218,37 +239,58 @@ async function balanceOf(uid) {
  * Doing this as "read the sum, decide, then insert" is what lets someone spend
  * their last credit twice by double-clicking. */
 async function moveCredits(uid, delta, reason, { requireBalance = false } = {}) {
+  const q = (text, params) => db.query(text, params);
+  // referral_credits is the part of the balance the daily cap must not eat.
+  // A referral grant raises it. A spend or an admin deduction lowers it.
+  // quota_sync does not touch it: that adjustment is the cap itself, and
+  // letting it shrink the bonus is how a plan change deletes the reward.
+  const bonus = reason === "referral"
+    ? ", referral_credits = referral_credits + $2"
+    : (delta < 0 && reason !== "quota_sync"
+        ? ", referral_credits = greatest(0, referral_credits + $2)"
+        : "");
   const sql = requireBalance
-    ? "update users set credit_balance = credit_balance + $2 where id=$1 and credit_balance >= $3 returning credit_balance"
-    : "update users set credit_balance = credit_balance + $2 where id=$1 returning credit_balance";
+    ? `update users set credit_balance = credit_balance + $2${bonus} where id=$1 and credit_balance >= $3 returning credit_balance`
+    : `update users set credit_balance = credit_balance + $2${bonus} where id=$1 returning credit_balance`;
   const params = requireBalance ? [uid, delta, -delta] : [uid, delta];
-  const r = await db.query(sql, params);
+  const r = await q(sql, params);
   if (!r.rows[0]) return null; // insufficient, or no such user
-  await db.query("insert into credit_ledger(user_id, delta, reason) values ($1,$2,$3)", [uid, delta, reason]);
+  await q("insert into credit_ledger(user_id, delta, reason) values ($1,$2,$3)", [uid, delta, reason]);
   return Number(r.rows[0].credit_balance);
 }
 
-/* Today's net admin adjustment. A support grant that puts someone above
- * their quota is left alone; leftover Pro credits after a downgrade are not. */
-async function adminBonusCovers(uid, excess) {
-  const r = (await db.query(
+/* How far above the daily quota this balance is allowed to sit.
+ * Admin grants count for the UTC day they were given — a support top-up is
+ * not a permanent second allowance. Referral credits are whatever has not
+ * been spent yet, so the cap cannot take them and a later downgrade cannot
+ * pay them out again. */
+async function protectedExtra(uid) {
+  const admin = Number((await db.query(
     "select coalesce(sum(delta),0)::int s from credit_ledger where user_id=$1 and created_at >= $2 and reason like 'admin%'",
     [uid, utcMidnight()]
-  )).rows[0];
-  return Number(r.s) >= excess;
+  )).rows[0].s);
+  const row = (await db.query("select referral_credits from users where id=$1", [uid])).rows[0];
+  return Math.max(0, admin) + Math.max(0, row ? Number(row.referral_credits) : 0);
 }
 
-/* Move the daily counter onto the current plan's quota. Upgrade tops up;
- * downgrade claws the leftover back. Called when the entitlement itself
- * changes — not on every poll, or a spend would refill. */
-async function applyPlanAllowance(uid) {
+async function capAboveQuota(uid) {
   const ent = await entitlement(uid);
   if (ent.unlimited) return;
   const bal = await balanceOf(uid);
-  const delta = ent.quota - bal;
-  if (delta === 0) return;
-  if (delta < 0 && await adminBonusCovers(uid, -delta)) return;
-  await moveCredits(uid, delta, "quota_sync");
+  const ceiling = ent.quota + await protectedExtra(uid);
+  if (bal > ceiling) await moveCredits(uid, ceiling - bal, "quota_sync");
+}
+
+/* Move the daily counter onto the current plan's quota. Upgrade tops up;
+ * downgrade claws the leftover back, stopping at quota plus any referral
+ * credits still unspent. Called when the entitlement itself changes — not
+ * on every poll, or a spend would refill. */
+async function applyPlanAllowance(uid) {
+  const ent = await entitlement(uid);
+  if (ent.unlimited) return;
+  await capAboveQuota(uid);
+  const bal = await balanceOf(uid);
+  if (bal < ent.quota) await moveCredits(uid, ent.quota - bal, "quota_sync");
 }
 
 /* Tops the balance UP TO the day's quota rather than adding to it. Adding meant
@@ -256,14 +298,12 @@ async function applyPlanAllowance(uid) {
  * of credits — the reason live accounts are sitting on 180. Topping up keeps
  * "N per day" honest. A leftover from a higher plan is capped here so a
  * Free account cannot keep spending yesterday's Pro pile; an admin bonus
- * that already sits above the quota is left alone. */
+ * that already sits above the quota is left alone, and so is an unspent
+ * referral reward. */
 async function grantDailyIfNeeded(uid) {
   const ent = await entitlement(uid);
   if (ent.unlimited) return; // nothing to meter
-  const bal = await balanceOf(uid);
-  if (bal > ent.quota && !(await adminBonusCovers(uid, bal - ent.quota))) {
-    await moveCredits(uid, ent.quota - bal, "quota_sync");
-  }
+  await capAboveQuota(uid);
   const already = (await db.query(
     "select 1 from credit_ledger where user_id=$1 and reason='daily_free' and created_at >= $2 limit 1",
     [uid, utcMidnight()]
@@ -272,6 +312,104 @@ async function grantDailyIfNeeded(uid) {
   const topUp = ent.quota - (await balanceOf(uid));
   if (topUp <= 0) return;
   await moveCredits(uid, topUp, "daily_free");
+}
+
+/* Signup reward for an approved referrer. Env so it can change without a
+ * deploy of markup; 15 is the program default. Out-of-range values fall
+ * back to 15 rather than paying 0 or a million. */
+function referralSignupCredits() {
+  const n = parseInt(process.env.REFERRAL_SIGNUP_CREDITS == null || process.env.REFERRAL_SIGNUP_CREDITS === ""
+    ? "15" : process.env.REFERRAL_SIGNUP_CREDITS, 10);
+  return Number.isInteger(n) && n >= 1 && n <= 1000 ? n : 15;
+}
+
+/* Phase 2, not built: a further bonus when the referred account starts a
+ * paid plan. Do not grant that from the Razorpay webhook. There is no
+ * payment reward until that rule exists and is tested. */
+
+/* Attribute `?ref=` once, and pay the referrer once.
+ *
+ * Password accounts have no verification email — the product has no mailer,
+ * and a password signup is a live session immediately. Google accounts are
+ * only created after Google says the email is verified, which is also their
+ * first session. Both awards happen at account creation. A later sign-in
+ * does not attribute and does not pay.
+ *
+ * The referrals row is the lock. Flipping it to rewarded authorises one
+ * payout; the next call finds it already rewarded and stops. A duplicate
+ * referred_user_id cannot insert a second row. */
+async function attributeReferral(newUserId, rawCode) {
+  const code = normalizeRef(rawCode);
+  newUserId = Number(newUserId);
+  if (!code || !Number.isInteger(newUserId)) return { awarded: false };
+  const referrer = (await db.query("select id from users where referral_code=$1", [code])).rows[0];
+  if (!referrer || referrer.id === newUserId) return { awarded: false };
+
+  let row;
+  try {
+    row = (await db.query(
+      "insert into referrals(referrer_user_id, referred_user_id, status) values ($1,$2,'pending') returning id, status",
+      [referrer.id, newUserId]
+    )).rows[0];
+  } catch (e) {
+    if (!/duplicate key/i.test(String(e && e.message))) throw e;
+    row = (await db.query("select id, status from referrals where referred_user_id=$1", [newUserId])).rows[0];
+    if (!row || row.status === "rewarded") return { awarded: false };
+  }
+
+  const claimed = (await db.query(
+    "update referrals set status='rewarded' where id=$1 and status='pending' returning id",
+    [row.id]
+  )).rows[0];
+  if (!claimed) return { awarded: false };
+
+  const link = (await db.query(
+    "update users set referred_by=$1 where id=$2 and referred_by is null and id <> $1 returning id",
+    [referrer.id, newUserId]
+  )).rows[0];
+  if (!link) {
+    const cur = (await db.query("select referred_by from users where id=$1", [newUserId])).rows[0];
+    if (!cur || Number(cur.referred_by) !== referrer.id) {
+      await db.query("delete from referrals where id=$1", [row.id]);
+      return { awarded: false };
+    }
+  }
+
+  try {
+    const bal = await moveCredits(referrer.id, referralSignupCredits(), "referral");
+    if (bal === null) {
+      await db.query("update referrals set status='pending' where id=$1 and status='rewarded'", [row.id]);
+      return { awarded: false };
+    }
+  } catch (e) {
+    await db.query("update referrals set status='pending' where id=$1 and status='rewarded'", [row.id]);
+    throw e;
+  }
+  return { awarded: true, referrerId: referrer.id };
+}
+
+const REF_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+async function ensureReferralCode(userId) {
+  const existing = (await db.query("select referral_code from users where id=$1", [userId])).rows[0];
+  if (!existing) return null;
+  if (existing.referral_code) return existing.referral_code;
+  for (let i = 0; i < 6; i++) {
+    const bytes = crypto.randomBytes(8);
+    let code = "";
+    for (let j = 0; j < 8; j++) code += REF_ALPHABET[bytes[j] % REF_ALPHABET.length];
+    try {
+      const r = await db.query(
+        "update users set referral_code=$1 where id=$2 and referral_code is null returning referral_code",
+        [code, userId]
+      );
+      if (r.rows[0]) return r.rows[0].referral_code;
+      const again = (await db.query("select referral_code from users where id=$1", [userId])).rows[0];
+      if (again && again.referral_code) return again.referral_code;
+    } catch (e) {
+      if (!/duplicate key|unique/i.test(String(e && e.message))) throw e;
+    }
+  }
+  return null;
 }
 
 // The shape the extension's worker and sidepanel already expect.
@@ -321,6 +459,9 @@ app.post("/api/auth/register", authLimiter, async (req, res) => {
       [email, username, hash]
     )).rows[0];
     await grantDailyIfNeeded(u.id);
+    // Cookie only. A ref in the JSON body is ignored so a client cannot
+    // attribute an account to a code the browser never actually followed.
+    await attributeReferral(u.id, req.cookies && req.cookies[REF_COOKIE]);
     setAuthCookie(res, u.id);
     res.json({ ok: true, user: await userPublic(u.id) });
   } catch (e) { console.error("[auth]", e && e.message); res.status(500).json({ error: "server_error" }); }
@@ -1058,6 +1199,8 @@ app.delete("/api/admin/users/:id", adminAuth, async (req, res) => {
   await db.query("delete from credit_ledger where user_id=$1", [id]);
   await db.query("delete from subscriptions where user_id=$1", [id]);
   await db.query("delete from admin_settings where user_id=$1", [id]);
+  await db.query("delete from referral_applications where user_id=$1", [id]);
+  await db.query("delete from referrals where referrer_user_id=$1 or referred_user_id=$1", [id]);
   await db.query("delete from users where id=$1", [id]);
   // The audit entry outlives the account, so it carries what was deleted.
   audit(req, "user.delete", { targetType: "user", targetId: id, detail: { email: u.email, username: u.username } });
@@ -1126,12 +1269,15 @@ app.post("/api/admin/2fa/disable", adminAuth, admin2faLimiter, async (req, res) 
 
 // MERGE-BY-EMAIL: if a user with this verified email already exists (e.g. a
 // password account), link googleId to that row — never create a duplicate.
-async function mergeOrCreateGoogleUser(info) {
+async function mergeOrCreateGoogleUser(info, refCode) {
   const email = String(info.email || "").toLowerCase();
   const existing = (await db.query("select id, google_id, disabled from users where email=$1", [email])).rows[0];
   let uid;
+  let created = false;
   if (existing) {
     // Signing in with Google must not be a way around a disabled account.
+    // An existing account is not a referral signup, even if a ref cookie
+    // is still sitting in the browser.
     if (existing.disabled) { const e = new Error("account_disabled"); e.disabled = true; throw e; }
     if (!existing.google_id) await db.query("update users set google_id=$1 where id=$2", [info.sub, existing.id]);
     uid = existing.id;
@@ -1140,14 +1286,20 @@ async function mergeOrCreateGoogleUser(info) {
       "insert into users(email, username, avatar_url, auth_provider, google_id) values ($1,$2,$3,'google',$4) returning id",
       [email, info.name || null, info.picture || null, info.sub]
     )).rows[0].id;
+    created = true;
   }
   await grantDailyIfNeeded(uid);
+  // The callback only reaches here after Google has verified the email,
+  // which is this account's first authenticated session.
+  if (created) await attributeReferral(uid, refCode);
   return uid;
 }
 
 /* ---------- Google OAuth (server-side code flow, merge by email) ---------- */
 app.get("/api/auth/google", (req, res) => {
   if (!process.env.GOOGLE_CLIENT_ID) return res.status(500).send("Google OAuth not configured (GOOGLE_CLIENT_ID missing).");
+  const next = safeNextPath(req.query.next);
+  if (next) res.cookie(NEXT_COOKIE, next, { httpOnly: true, sameSite: "lax", secure: PROD, maxAge: 10 * 60e3, path: "/" });
   const state = crypto.randomBytes(16).toString("hex");
   res.cookie(OAUTH_STATE_COOKIE, state, { httpOnly: true, sameSite: "lax", secure: PROD, maxAge: 10 * 60e3 });
   const p = new URLSearchParams({
@@ -1183,9 +1335,11 @@ app.get("/api/auth/google/callback", async (req, res) => {
     if (!tok.access_token) return res.status(400).send("Google token exchange failed");
     const info = await (await fetch("https://www.googleapis.com/oauth2/v3/userinfo", { headers: { Authorization: "Bearer " + tok.access_token } })).json();
     if (info.email_verified === false || !info.email) return res.status(400).send("Unverified Google email");
-    const uid = await mergeOrCreateGoogleUser(info);
+    const uid = await mergeOrCreateGoogleUser(info, req.cookies && req.cookies[REF_COOKIE]);
     setAuthCookie(res, uid);
-    res.redirect("/dashboard");
+    const next = safeNextPath(req.cookies && req.cookies[NEXT_COOKIE]);
+    res.clearCookie(NEXT_COOKIE, { httpOnly: true, sameSite: "lax", secure: PROD });
+    res.redirect(next || "/dashboard");
   } catch (e) {
     if (e && e.disabled) return res.status(403).send("This account has been disabled.");
     // Deliberately not echoing e.message: reflecting an error string into an
@@ -1269,7 +1423,151 @@ app.post("/api/webhooks/razorpay", async (req, res) => {
     [uid, sub.id || null, status, notes.plan || sub.plan_id || null, periodEnd]
   );
   await applyPlanAllowance(uid);
+  // Phase 2, not built: a referral bonus when a referred account first
+  // becomes paid. Do not grant credits here. A charged event is not that rule.
   res.json({ ok: true });
+});
+
+/* ---------- referral program ----------
+ * Apply, then a person approves. A code is minted only then — signing up
+ * does not hand every account a link.
+ *
+ * Re-apply: a rejected application can be submitted again, which puts the
+ * same row back to pending and clears the previous reason. A pending or
+ * approved application is refused. Rejecting an approved application
+ * clears the code so the link stops matching; signups already attributed
+ * stay attributed.
+ *
+ * Phase 2 (paid-plan bonus) is not implemented. */
+const applyLimiter = rateLimit("referralApply", 15, 60 * 60e3);
+
+function clipField(v) {
+  return String(v == null ? "" : v).replace(/\u0000/g, "").trim();
+}
+
+app.get("/api/referral/program", (req, res) => {
+  res.json({ signupCredits: referralSignupCredits(), paidBonus: null });
+});
+
+async function referralView(userId) {
+  const appRow = (await db.query(
+    "select channel, audience, why, status, reject_reason from referral_applications where user_id=$1",
+    [userId]
+  )).rows[0];
+  const u = (await db.query("select referral_code from users where id=$1", [userId])).rows[0];
+  const approved = appRow && appRow.status === "approved" && u && u.referral_code;
+  const signups = Number((await db.query(
+    "select count(*)::int c from referrals where referrer_user_id=$1 and status='rewarded'",
+    [userId]
+  )).rows[0].c);
+  const earned = Number((await db.query(
+    "select coalesce(sum(delta),0)::int s from credit_ledger where user_id=$1 and reason='referral'",
+    [userId]
+  )).rows[0].s);
+  return {
+    status: appRow ? appRow.status : "none",
+    channel: appRow ? appRow.channel : null,
+    audience: appRow ? appRow.audience : null,
+    why: appRow ? appRow.why : null,
+    rejectReason: appRow && appRow.status === "rejected" ? appRow.reject_reason : null,
+    referralCode: approved ? u.referral_code : null,
+    signups: approved ? signups : 0,
+    creditsEarned: approved ? earned : 0,
+  };
+}
+
+app.get("/api/referral/me", auth, async (req, res) => {
+  res.json(await referralView(req.userId));
+});
+
+app.post("/api/referral/apply", applyLimiter, auth, async (req, res) => {
+  const channel = clipField(req.body && req.body.channel);
+  const audience = clipField(req.body && req.body.audience);
+  const why = clipField(req.body && req.body.why);
+  if (channel.length < 2 || channel.length > 200) return res.status(400).json({ error: "bad_channel", message: "Say where you'll promote Erasezo." });
+  if (audience.length > 80) return res.status(400).json({ error: "bad_audience" });
+  if (why.length < 40) return res.status(400).json({ error: "why_too_short", message: "Tell us a bit more — at least 40 characters." });
+  if (why.length > 2000) return res.status(400).json({ error: "why_too_long" });
+  if (!req.body || req.body.acceptTerms !== true) return res.status(400).json({ error: "terms_required", message: "Accept the referral rules to apply." });
+
+  const existing = (await db.query("select status from referral_applications where user_id=$1", [req.userId])).rows[0];
+  if (existing && existing.status === "pending") return res.status(409).json({ error: "already_pending" });
+  if (existing && existing.status === "approved") return res.status(409).json({ error: "already_approved" });
+  if (existing) {
+    await db.query(
+      `update referral_applications
+         set channel=$2, audience=$3, why=$4, status='pending', reject_reason=null,
+             reviewed_at=null, reviewed_by=null, updated_at=now()
+       where user_id=$1`,
+      [req.userId, channel, audience || null, why]
+    );
+  } else {
+    await db.query(
+      "insert into referral_applications(user_id, channel, audience, why) values ($1,$2,$3,$4)",
+      [req.userId, channel, audience || null, why]
+    );
+  }
+  res.json(await referralView(req.userId));
+});
+
+app.get("/api/admin/referrals", adminAuth, async (req, res) => {
+  const status = String(req.query.status || "pending");
+  if (!["pending", "approved", "rejected", "all"].includes(status)) return res.status(400).json({ error: "bad_status" });
+  const params = [];
+  let where = "";
+  if (status !== "all") { params.push(status); where = " where a.status=$1"; }
+  const rows = (await db.query(
+    `select a.user_id, a.channel, a.audience, a.why, a.status, a.reject_reason,
+            a.created_at, a.updated_at, a.reviewed_at, a.reviewed_by,
+            u.email, u.username, u.referral_code
+     from referral_applications a
+     join users u on u.id = a.user_id${where}
+     order by a.updated_at desc limit 100`,
+    params
+  )).rows;
+  res.json({
+    applications: rows.map((r) => ({
+      userId: r.user_id, email: r.email, username: r.username,
+      channel: r.channel, audience: r.audience, why: r.why, status: r.status,
+      rejectReason: r.reject_reason, referralCode: r.status === "approved" ? r.referral_code : null,
+      createdAt: r.created_at, updatedAt: r.updated_at, reviewedAt: r.reviewed_at, reviewedBy: r.reviewed_by,
+    })),
+  });
+});
+
+app.post("/api/admin/referrals/:userId/approve", adminAuth, async (req, res) => {
+  const id = parseInt(req.params.userId, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
+  const row = (await db.query("select status from referral_applications where user_id=$1", [id])).rows[0];
+  if (!row) return res.status(404).json({ error: "not_found" });
+  const code = await ensureReferralCode(id);
+  if (!code) return res.status(500).json({ error: "code_failed" });
+  await db.query(
+    `update referral_applications
+       set status='approved', reject_reason=null, reviewed_at=now(), reviewed_by=$2, updated_at=now()
+     where user_id=$1`,
+    [id, req.userId]
+  );
+  audit(req, "referral.approve", { targetType: "user", targetId: id, detail: { referralCode: code } });
+  res.json({ ok: true, status: "approved", referralCode: code });
+});
+
+app.post("/api/admin/referrals/:userId/reject", adminAuth, async (req, res) => {
+  const id = parseInt(req.params.userId, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "bad_id" });
+  const reason = clipField(req.body && req.body.reason);
+  if (reason.length > 500) return res.status(400).json({ error: "reason_too_long" });
+  const row = (await db.query("select status from referral_applications where user_id=$1", [id])).rows[0];
+  if (!row) return res.status(404).json({ error: "not_found" });
+  await db.query(
+    `update referral_applications
+       set status='rejected', reject_reason=$2, reviewed_at=now(), reviewed_by=$3, updated_at=now()
+     where user_id=$1`,
+    [id, reason || null, req.userId]
+  );
+  await db.query("update users set referral_code=null where id=$1", [id]);
+  audit(req, "referral.reject", { targetType: "user", targetId: id, detail: { reason: reason || null } });
+  res.json({ ok: true, status: "rejected" });
 });
 
 /* ---------- static pages ---------- */
@@ -1285,6 +1583,8 @@ app.use(express.static(path.join(__dirname, "public"), { redirect: false, index:
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "public", "home.html")));
 app.get(["/login", "/signin"], (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
+app.get("/referral", (req, res) => res.sendFile(path.join(__dirname, "public", "referral.html")));
+app.get("/referral-program", (req, res) => res.redirect(302, "/referral"));
 // Control Room. No server-side gate on purpose: the page ships no data of its
 // own. Every byte it shows comes from /api/admin/*, and each of those calls
 // runs adminAuth, which re-reads is_admin and disabled from the database on
@@ -1364,4 +1664,4 @@ async function start() {
 }
 if (require.main === module) start().catch((e) => { console.error("boot failed:", e); process.exit(1); });
 
-module.exports = { app, start, db, userPublic, grantDailyIfNeeded, applyPlanAllowance, mergeOrCreateGoogleUser, dailyResetAll, ensureAdminFromEnv };
+module.exports = { app, start, db, userPublic, grantDailyIfNeeded, applyPlanAllowance, mergeOrCreateGoogleUser, dailyResetAll, ensureAdminFromEnv, attributeReferral, referralSignupCredits };
