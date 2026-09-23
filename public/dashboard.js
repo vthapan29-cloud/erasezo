@@ -152,7 +152,7 @@
     var acts = el("div", "actions");
     [
       ["Get the extension", "Removal happens in the browser side panel.", function () {
-        window.open(STORE_URL, "_blank", "noopener");
+        location.assign("/#get-extension");
       }],
       ["Plans & billing", "Daily allowance, invoices and upgrades.", function () { go("plans"); }],
       ["Account settings", "Name, password and connected accounts.", function () { go("profile"); }]
@@ -176,9 +176,6 @@
       ra.appendChild(rr);
     }
   }
-
-  /* The extension's own listing, the same one its review prompt links to. */
-  var STORE_URL = "https://chromewebstore.google.com/detail/erasio-%E2%80%93-gemini-omni-wate/aedhekmakfgbcknofpiccffacdjcgdpp";
 
   var REASONS = {
     daily_free: "Daily free credits", quota_sync: "Plan allowance adjusted", admin_grant: "Added by support", admin_deduct: "Adjusted by support",

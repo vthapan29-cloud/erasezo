@@ -102,6 +102,9 @@ async function get(path, uid) {
   ];
   for (const file of ["../public/dashboard.js", "../public/admin.js"]) {
     const src = require("fs").readFileSync(require("path").join(__dirname, file), "utf8");
+    if (file.endsWith("dashboard.js")) {
+      assert.ok(!/chromewebstore|erasio/i.test(src), "dashboard.js names no store listing");
+    }
     const m = src.match(/function fold\(rows\) \{[\s\S]*?\n  \}/);
     assert.ok(m, file + " still defines fold(rows)");
     const folded = new Function(m[0] + "; return fold;")()(rows);
