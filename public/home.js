@@ -8,15 +8,6 @@
 (function () {
   "use strict";
 
-  var STORE_URL = "https://chromewebstore.google.com/detail/erasio-%E2%80%93-gemini-omni-wate/aedhekmakfgbcknofpiccffacdjcgdpp";
-  ["installTop", "installHero", "installEnd"].forEach(function (id) {
-    var a = document.getElementById(id);
-    if (!a) return;
-    a.href = STORE_URL;
-    a.target = "_blank";
-    a.rel = "noopener";
-  });
-
   /* ---- menu ---- */
   var toggle = document.getElementById("navToggle");
   if (toggle) {
