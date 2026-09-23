@@ -85,11 +85,24 @@ const js = fs.readFileSync(path.join(pub, "home.js"), "utf8");
   assert.ok(plans.plans.every((p) => !("razorpayPlanId" in p)), "still no billing ids in the public payload");
   console.log("ok - pricing is read from the same table the server bills against");
 
-  /* 4) Every outbound link opens away from the page and cannot reach back
-        into it through window.opener. */
-  assert.ok(/rel = "noopener"/.test(js) || /rel="noopener"/.test(js),
-    "the store links are opened with noopener");
-  console.log("ok - outbound links carry noopener");
+  /* 4) The install CTAs stay on this page. There is no Erasezo Chrome Web
+        Store listing, so the page must not send anyone to a store URL —
+        including someone else's. Any link that does leave the page still
+        cannot reach back through window.opener. */
+  assert.ok(!/chromewebstore|erasio/i.test(js), "home.js names no store listing");
+  assert.ok(!/chromewebstore|erasio/i.test(html), "home.html names no store listing");
+  assert.ok(/id="get-extension"/.test(html), "a section says the listing isn't live");
+  for (const id of ["installTop", "installHero", "installEnd"]) {
+    assert.ok(new RegExp('id="' + id + '"[^>]*href="#get-extension"').test(html),
+      id + " points at #get-extension");
+    assert.ok(new RegExp('id="' + id + '"[\\s\\S]{0,500}?Get the extension').test(html),
+      id + ' says "Get the extension"');
+  }
+  if (/target\s*=\s*"_blank"/.test(html) || /target = "_blank"/.test(js)) {
+    assert.ok(/rel="noopener"/.test(html) || /rel = "noopener"/.test(js),
+      "outbound links are opened with noopener");
+  }
+  console.log("ok - install CTAs stay on this page");
 
   /* 5) One heading per level, in order, and a skip link first in the tab
         order — the two structural things a screen reader user notices. */
