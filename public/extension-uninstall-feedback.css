@@ -1,0 +1,73 @@
+/* Uninstall feedback page. Colours come from tokens.css. Layout only lives here. */
+
+.uf-main { padding: clamp(28px, 5vw, 64px) 0 0; }
+.uf-keep { margin-bottom: clamp(22px, 4vw, 36px); }
+
+@media (max-width: 900px) {
+  /* home.css hides the ghost header button below 900px because the home page
+     has a menu. This page has no menu, so Sign in has to stay. */
+  .head-cta .btn.ghost { display: inline-flex; }
+}
+
+.uf-card { max-width: 760px; margin-inline: auto; }
+.uf-card h2 { font-size: 1.35rem; }
+.uf-card > div > p { color: var(--ez-ink-soft); }
+
+.uf-needjs {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--ez-r);
+  background: var(--ez-warn-wash);
+  color: var(--ez-ink);
+  font-size: .9rem;
+}
+
+.uf-card fieldset { border: 0; margin: 18px 0 0; padding: 0; min-inline-size: 0; }
+.uf-card legend { font-weight: 700; padding: 0; }
+
+.uf-reasons { display: grid; gap: 8px; margin-top: 10px; }
+@media (min-width: 640px) { .uf-reasons { grid-template-columns: 1fr 1fr; } }
+
+.uf-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--ez-border-strong);
+  border-radius: var(--ez-r);
+  background: var(--ez-surface-2);
+  color: var(--ez-ink);
+  font-weight: 600;
+  font-size: .92rem;
+  line-height: 1.35;
+  cursor: pointer;
+}
+.uf-reason:has(:checked) {
+  border-color: var(--ez-accent);
+  background: var(--ez-accent-wash);
+}
+.uf-reason input { margin-top: 3px; accent-color: var(--ez-accent); flex: none; }
+
+.uf-other { display: none; }
+#feedbackForm:has(input[name="reason"][value="other"]:checked) .uf-other { display: block; }
+
+.uf-label { display: block; font-weight: 600; font-size: .9rem; margin: 16px 0 6px; }
+.uf-opt { color: var(--ez-ink-faint); font-weight: 500; }
+
+.uf-card input[type="text"],
+.uf-card input[type="email"],
+.uf-card textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: var(--ez-r);
+  border: 1px solid var(--ez-border-strong);
+  background: var(--ez-surface-2);
+  color: var(--ez-ink);
+  font: 400 .95rem var(--ez-font);
+}
+.uf-card textarea { min-height: 120px; resize: vertical; }
+
+.uf-card .uf-needjs { color: var(--ez-ink); }
+.uf-card .uf-msg { margin: 12px 0 0; color: var(--ez-crit); font-size: .9rem; }
+.uf-card .btn { width: 100%; margin-top: 16px; }
