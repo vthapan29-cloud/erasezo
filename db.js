@@ -164,6 +164,20 @@ create table if not exists admin_audit (
   created_at  timestamptz not null default now()
 );
 create index if not exists admin_audit_created on admin_audit (created_at desc);
+-- Public uninstall notes. No user_id: the extension may already be gone, so
+-- the row is not an account. ip is a truncated prefix kept for abuse only.
+-- Rollback: drop table uninstall_feedback;
+create table if not exists uninstall_feedback (
+  id           serial primary key,
+  reason       text not null,
+  reason_other text,
+  feedback     text,
+  email        text,
+  ip           text,
+  user_agent   text,
+  created_at   timestamptz not null default now()
+);
+create index if not exists uninstall_feedback_created on uninstall_feedback (created_at desc);
 `;
 
 // Seeded rather than hardcoded so the Control Room can edit them, but only when

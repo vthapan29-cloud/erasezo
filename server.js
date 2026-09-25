@@ -1607,6 +1607,85 @@ app.post("/api/admin/referrals/:userId/reject", adminAuth, async (req, res) => {
   res.json({ ok: true, status: "rejected" });
 });
 
+/* ---------- uninstall feedback ----------
+ * Public on purpose: the person may have no session left once the extension
+ * is gone. One reason from a fixed list, optional note and email. The stored
+ * IP is a prefix, not the full address — enough to spot a flood, not a trail
+ * back to one machine. Rollback of the table: drop table uninstall_feedback. */
+const UNINSTALL_REASONS = [
+  "no_longer_needed", "didnt_work", "quality", "too_slow", "hard_to_use",
+  "couldnt_remove", "download_process", "better_alternative", "privacy",
+  "bug", "missing_feature", "other",
+];
+const uninstallLimiter = rateLimit("uninstallFeedback", 10, 60 * 60e3);
+
+function truncateIp(ip) {
+  let s = String(ip || "").trim();
+  if (!s) return null;
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(s);
+  if (mapped) s = mapped[1];
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(s);
+  if (v4) {
+    const oct = v4.slice(1).map(Number);
+    if (oct.every((n) => n <= 255)) return oct[0] + "." + oct[1] + "." + oct[2] + ".0";
+  }
+  if (s.includes(":")) {
+    const left = (s.split("::")[0] || "").split(":").filter(Boolean).slice(0, 4);
+    return left.length ? left.join(":") + "::" : "::";
+  }
+  return s.slice(0, 64);
+}
+
+function clipUa(v) {
+  const s = clipField(v);
+  return s ? s.slice(0, 300) : null;
+}
+
+app.post("/api/uninstall-feedback", uninstallLimiter, async (req, res) => {
+  const body = req.body && typeof req.body === "object" ? req.body : {};
+  const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+  if (!UNINSTALL_REASONS.includes(reason)) {
+    return res.status(400).json({ error: "bad_reason", message: "Choose one of the reasons listed." });
+  }
+  let reasonOther = null;
+  if (reason === "other") {
+    if (typeof body.reasonOther !== "string") {
+      return res.status(400).json({ error: "reason_other_required", message: "Add a short reason." });
+    }
+    reasonOther = clipField(body.reasonOther);
+    if (!reasonOther) return res.status(400).json({ error: "reason_other_required", message: "Add a short reason." });
+    if (reasonOther.length > 500) {
+      return res.status(400).json({ error: "reason_other_too_long", message: "Keep the short reason to 500 characters." });
+    }
+  }
+  let feedback = null;
+  if (body.feedback != null && body.feedback !== "") {
+    if (typeof body.feedback !== "string") {
+      return res.status(400).json({ error: "bad_feedback", message: "Feedback has to be text." });
+    }
+    feedback = clipField(body.feedback);
+    if (feedback.length > 5000) {
+      return res.status(400).json({ error: "feedback_too_long", message: "Keep feedback to 5000 characters." });
+    }
+    if (!feedback) feedback = null;
+  }
+  let email = null;
+  if (body.email != null && !(typeof body.email === "string" && body.email.trim() === "")) {
+    if (typeof body.email !== "string") {
+      return res.status(400).json({ error: "invalid_email", message: "Enter a valid email, or leave it blank." });
+    }
+    email = body.email.trim().toLowerCase();
+    if (email.length > 254 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      return res.status(400).json({ error: "invalid_email", message: "Enter a valid email, or leave it blank." });
+    }
+  }
+  await db.query(
+    "insert into uninstall_feedback(reason, reason_other, feedback, email, ip, user_agent) values ($1,$2,$3,$4,$5,$6)",
+    [reason, reasonOther, feedback, email, truncateIp(req.ip), clipUa(req.get("user-agent"))]
+  );
+  res.json({ ok: true });
+});
+
 /* ---------- static pages ---------- */
 // redirect:false — public/admin is a real directory, and static's default
 // "add a trailing slash" redirect for directories fights the /admin route
@@ -1622,6 +1701,7 @@ app.get(["/login", "/signin"], (req, res) => res.sendFile(path.join(__dirname, "
 app.get("/dashboard", (req, res) => res.sendFile(path.join(__dirname, "public", "dashboard.html")));
 app.get("/referral", (req, res) => res.sendFile(path.join(__dirname, "public", "referral.html")));
 app.get("/referral-program", (req, res) => res.redirect(302, "/referral"));
+app.get("/extension-uninstall-feedback", (req, res) => res.sendFile(path.join(__dirname, "public", "extension-uninstall-feedback.html")));
 // Control Room. No server-side gate on purpose: the page ships no data of its
 // own. Every byte it shows comes from /api/admin/*, and each of those calls
 // runs adminAuth, which re-reads is_admin and disabled from the database on
