@@ -1686,6 +1686,32 @@ app.post("/api/uninstall-feedback", uninstallLimiter, async (req, res) => {
   res.json({ ok: true });
 });
 
+/* Read-only. ip is the truncated prefix already stored at insert — this
+ * route does not write, and rollback is deleting the route. */
+app.get("/api/admin/uninstall-feedback", adminAuth, async (req, res) => {
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+  const rows = (await db.query(
+    `select reason, reason_other, feedback, email, ip, created_at
+     from uninstall_feedback
+     order by created_at desc, id desc
+     limit $1 offset $2`,
+    [limit, offset]
+  )).rows;
+  const total = (await db.query("select count(*)::int c from uninstall_feedback")).rows[0].c;
+  res.json({
+    entries: rows.map((r) => ({
+      reason: r.reason,
+      reasonOther: r.reason_other,
+      feedback: r.feedback,
+      email: r.email,
+      createdAt: r.created_at,
+      ip: r.ip,
+    })),
+    total, limit, offset,
+  });
+});
+
 /* ---------- static pages ---------- */
 // redirect:false — public/admin is a real directory, and static's default
 // "add a trailing slash" redirect for directories fights the /admin route

@@ -128,6 +128,7 @@
     { id: "users", title: "Users", icon: "👤", custom: renderUsers },
     { id: "plans", title: "Plans", icon: "💳", custom: renderPlans },
     { id: "referrals", title: "Referrals", icon: "🎁", custom: renderReferrals },
+    { id: "uninstall", title: "Uninstall feedback", icon: "💬", custom: renderUninstall },
     { id: "detection", title: "Detection", icon: "🎯",
       desc: "How the sparkle is located. Lower nccAccept catches fainter marks; the scan finds it when it drifts off the auto position.",
       groups: [{ title: "Image detection · erasioToolImageSettings", fields: [
@@ -204,6 +205,7 @@
     users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>',
     plans: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
     referrals: '<path d="M20 12v9H4v-9"/><rect x="2" y="7" width="20" height="5" rx="1"/><path d="M12 21V7"/><path d="M12 7 8.5 3.5a2.5 2.5 0 1 1 3.5 0"/><path d="M12 7l3.5-3.5a2.5 2.5 0 1 0-3.5 0"/>',
+    uninstall: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     dashboard: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
     detection: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.4"/>',
     removal: '<path d="m7 21-4.3-4.3a1.7 1.7 0 0 1 0-2.4l9.6-9.6a1.7 1.7 0 0 1 2.4 0l5 5a1.7 1.7 0 0 1 0 2.4L13 21"/><path d="M22 21H8"/><path d="m5 12 7 7"/>',
@@ -1336,6 +1338,80 @@
     });
   }
 
+  /* ---- Uninstall feedback ----
+   * Notes left when the extension was removed. Read-only: there is no
+   * control here that edits or deletes a row. */
+  var fbState = { loading: false, data: null, error: null, offset: 0, limit: 50 };
+  function loadUninstall() {
+    fbState.loading = true;
+    adminApi("/api/admin/uninstall-feedback?limit=" + fbState.limit + "&offset=" + fbState.offset)
+      .then(function (d) { fbState.data = d; fbState.error = null; })
+      .catch(function (e) { fbState.error = e.message; fbState.data = null; })
+      .then(function () { fbState.loading = false; if (active === "uninstall") render(); });
+  }
+  function renderUninstall(tab, panel) {
+    var ph = el("div", "panel-head");
+    ph.appendChild(el("h2", null, "Uninstall feedback"));
+    ph.appendChild(el("p", null, "Notes left when the extension was removed. Read-only."));
+    panel.appendChild(ph);
+
+    if (fbState.loading && !fbState.data) { renderSkeleton(panel); return; }
+    if (fbState.error) {
+      var ec = el("div", "card pad");
+      ec.appendChild(el("div", "callout", "Couldn't load uninstall feedback: " + fbState.error));
+      panel.appendChild(ec);
+      return;
+    }
+    if (!fbState.data) { loadUninstall(); renderSkeleton(panel); return; }
+
+    var d = fbState.data;
+    var list = d.entries || [];
+    var card = el("div", "card pad");
+    card.appendChild(el("p", "sec-sub", d.total + (d.total === 1 ? " note" : " notes")));
+    if (!list.length) {
+      card.appendChild(el("p", null, d.total ? "No feedback on this page." : "No uninstall feedback yet."));
+    } else {
+      var scroller = el("div", "table-scroll");
+      var tbl = el("table");
+      var thead = el("thead");
+      var htr = el("tr");
+      ["Reason", "Other", "Feedback", "Email", "Created", "IP"].forEach(function (h) {
+        htr.appendChild(el("th", null, h));
+      });
+      thead.appendChild(htr);
+      tbl.appendChild(thead);
+      var tb = el("tbody");
+      list.forEach(function (row) {
+        var tr = el("tr");
+        [row.reason, row.reasonOther, row.feedback, row.email, fmtWhen(row.createdAt), row.ip].forEach(function (v, i) {
+          tr.appendChild(el("td", (i === 1 || i === 2) ? "note" : null, v ? String(v) : "—"));
+        });
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+      scroller.appendChild(tbl);
+      card.appendChild(scroller);
+    }
+    if (d.total > d.limit) {
+      var pr = el("div", "row");
+      pr.style.marginTop = "14px";
+      if (d.offset > 0) pr.appendChild(btn("← Newer", "ghost sm", function () {
+        fbState.offset = Math.max(0, d.offset - d.limit);
+        fbState.data = null;
+        loadUninstall();
+        render();
+      }));
+      if (d.offset + d.limit < d.total) pr.appendChild(btn("Older →", "ghost sm", function () {
+        fbState.offset = d.offset + d.limit;
+        fbState.data = null;
+        loadUninstall();
+        render();
+      }));
+      card.appendChild(pr);
+    }
+    panel.appendChild(card);
+  }
+
   /* ---- boot ---- */
   var active = "dashboard";
   try {
@@ -1348,7 +1424,7 @@
    * Grouping the nav makes the blast radius of a change obvious before it's
    * made. */
   var NAV_GROUPS = [
-    { label: "Service", ids: ["dashboard", "users", "plans", "referrals"] },
+    { label: "Service", ids: ["dashboard", "users", "plans", "referrals", "uninstall"] },
     { label: "Engine", ids: ["detection", "removal", "masklocks", "video", "sites"] },
     { label: "System", ids: ["audit", "sync", "localization", "maintenance"] }
   ];
