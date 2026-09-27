@@ -48,6 +48,12 @@ input:focus{outline:2px solid var(--accent);border-color:var(--accent)}
 aside{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);padding:20px 14px;display:flex;flex-direction:column;gap:4px}
 .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px}
 .brand b{font-size:1.05rem;font-weight:900}
+.brand .brand-lockup{width:auto;height:30px;border-radius:0;flex:none;display:block}
+:root[data-theme="dark"] .brand-lockup,
+:root[data-ez-theme="dark"] .brand-lockup{filter:invert(1) hue-rotate(180deg)}
+@media (prefers-color-scheme: dark){
+  :root:not([data-ez-theme="light"]):not([data-theme="light"]) .brand-lockup{filter:invert(1) hue-rotate(180deg)}
+}
 .brand span{display:block;font-size:10px;color:var(--faint);letter-spacing:.09em;text-transform:uppercase}
 nav{display:flex;flex-direction:column;gap:3px}
 nav button{display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:none;border:0;border-radius:10px;padding:10px 11px;color:var(--soft);font:500 .92rem inherit;cursor:pointer}

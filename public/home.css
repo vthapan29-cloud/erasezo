@@ -77,6 +77,15 @@ h3 { font-size: 1.05rem; font-weight: 700; letter-spacing: -.01em; }
 .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; font-weight: 800; letter-spacing: -.02em; min-width: 0; }
 .brand img { flex: none; }
 .brand img { width: 30px; height: 30px; border-radius: 8px; }
+/* Full lockup (icon + wordmark). The square rule above is for the footer mark. */
+.brand img.brand-lockup { width: auto; height: 30px; max-width: none; border-radius: 0; }
+:root[data-theme="dark"] .brand-lockup,
+:root[data-ez-theme="dark"] .brand-lockup { filter: invert(1) hue-rotate(180deg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-ez-theme="light"]):not([data-theme="light"]) .brand-lockup {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
 .site-nav { display: flex; gap: 4px; margin-left: auto; }
 .site-nav a {
   color: var(--ez-ink-soft); text-decoration: none; font-size: .92rem; font-weight: 500;
