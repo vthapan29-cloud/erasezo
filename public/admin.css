@@ -26,6 +26,12 @@ a{color:var(--accent-text)}
 /* Sidebar */
 aside{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;background:var(--surface);border-right:1px solid var(--border);padding:20px 14px;display:flex;flex-direction:column;gap:4px}
 .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 16px}
+.brand .brand-lockup{width:auto;height:30px;border-radius:0;flex:none;display:block}
+:root[data-theme="dark"] .brand-lockup,
+:root[data-ez-theme="dark"] .brand-lockup{filter:invert(1) hue-rotate(180deg)}
+@media (prefers-color-scheme: dark){
+  :root:not([data-ez-theme="light"]):not([data-theme="light"]) .brand-lockup{filter:invert(1) hue-rotate(180deg)}
+}
 .brand .logo{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;overflow:hidden}
 /* The mark brings its own ground and corners; a tinted tile behind it
    would just be a second frame. */
